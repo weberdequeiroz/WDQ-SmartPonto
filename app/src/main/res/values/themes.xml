@@ -1,0 +1,8 @@
+<resources>
+    <color name="brand">#1E1B4B</color>
+    <style name="Theme.SmartPonto" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/brand</item>
+        <item name="android:colorPrimary">@color/brand</item>
+        <item name="android:colorAccent">#4F46E5</item>
+    </style>
+</resources>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e1b4b"/>
+      <stop offset=".55" stop-color="#3730a3"/>
+      <stop offset="1" stop-color="#7c3aed"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(20 20) scale(.546875)">
+    <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+    <circle cx="256" cy="256" r="150" fill="none" stroke="#fff" stroke-width="30"/>
+    <g stroke="#fff" stroke-width="16" stroke-linecap="round" opacity=".55">
+      <path d="M256 128v22M384 256h-22M256 384v-22M128 256h22"/>
+    </g>
+    <path d="M190 262l46 46 96-108" fill="none" stroke="#fbbf24" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g font-family="'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif">
+    <text x="340" y="150" font-size="64" font-weight="800" fill="#f59e0b" letter-spacing="6">WDQ</text>
+    <text x="336" y="236" font-size="104" font-weight="800" fill="#1e1b4b">Smart<tspan fill="#6d28d9">Ponto</tspan></text>
+    <text x="340" y="288" font-size="32" fill="#5b6478">Seu ponto, no seu controle.</text>
+  </g>
+</svg>

@@ -1,0 +1,61 @@
+name: Build e Release
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Testar cálculos
+        run: node --test tests/*.mjs
+        env:
+          TZ: America/Sao_Paulo
+
+      - name: Gerar APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Preparar arquivos
+        run: |
+          VERSION=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          cp app/build/outputs/apk/debug/*.apk SmartPonto.apk
+          (cd web && zip -r ../SmartPonto-web.zip .)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SmartPonto
+          path: |
+            SmartPonto.apk
+            SmartPonto-web.zip
+
+      - name: Publicar Release
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION }}-build${{ github.run_number }}
+          name: WDQ SmartPonto ${{ env.VERSION }} (build ${{ github.run_number }})
+          body: |
+            **Android:** baixe `SmartPonto.apk` e instale (permita instalar apps de fontes desconhecidas).
+            **iPhone:** abra https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ no Safari e toque em Compartilhar > Adicionar à Tela de Início.
+          files: |
+            SmartPonto.apk
+            SmartPonto-web.zip
+          make_latest: true

@@ -1,0 +1,98 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  buildDays, buildReport, currentState, summarizeDay, hourBank, dayKey, fmtDur, parseHHMM,
+  weekRange, monthRange, DEFAULT_SETTINGS, HOUR, MIN,
+} from '../web/js/calc.js';
+
+const at = (y, m, d, h, min = 0) => new Date(y, m - 1, d, h, min).getTime();
+const p = (type, ts) => ({ id: String(ts) + type, type, ts });
+const settings = { ...DEFAULT_SETTINGS, tolerance: 10 };
+
+test('jornada normal com almoço', () => {
+  const punches = [
+    p('in', at(2026, 10, 5, 8)), p('break_start', at(2026, 10, 5, 12)),
+    p('break_end', at(2026, 10, 5, 13)), p('out', at(2026, 10, 5, 17, 30)),
+  ];
+  const days = buildDays(punches, at(2026, 10, 6, 9));
+  const d = days.get('2026-10-05');
+  assert.equal(d.work, 8.5 * HOUR);
+  assert.equal(d.breaks, HOUR);
+  assert.equal(d.open, false);
+  const s = summarizeDay('2026-10-05', days, settings, {}, '2026-10-06');
+  assert.equal(s.balance, 30 * MIN);
+  assert.deepEqual(s.warnings, []);
+});
+
+test('turno noturno pertence ao dia da entrada', () => {
+  const punches = [p('in', at(2026, 10, 5, 22)), p('out', at(2026, 10, 6, 6))];
+  const days = buildDays(punches, at(2026, 10, 7, 9));
+  assert.equal(days.get('2026-10-05').work, 8 * HOUR);
+  assert.equal(days.has('2026-10-06'), false);
+});
+
+test('tolerância zera pequenas diferenças', () => {
+  const punches = [p('in', at(2026, 10, 5, 8, 5)), p('break_start', at(2026, 10, 5, 12)),
+    p('break_end', at(2026, 10, 5, 13)), p('out', at(2026, 10, 5, 17))];
+  const days = buildDays(punches, at(2026, 10, 6, 9));
+  assert.equal(summarizeDay('2026-10-05', days, settings, {}, '2026-10-06').balance, 0);
+});
+
+test('jornada em andamento e estado atual', () => {
+  const punches = [p('in', at(2026, 10, 9, 8)), p('break_start', at(2026, 10, 9, 12))];
+  const now = at(2026, 10, 9, 12, 20);
+  const st = currentState(punches, now);
+  assert.equal(st.state, 'break');
+  assert.equal(st.since, at(2026, 10, 9, 12));
+  const d = buildDays(punches, now).get('2026-10-09');
+  assert.equal(d.work, 4 * HOUR);
+  assert.equal(d.breaks, 20 * MIN);
+});
+
+test('saída esquecida não conta para sempre', () => {
+  const punches = [p('in', at(2026, 10, 5, 8)), p('in', at(2026, 10, 7, 8))];
+  const days = buildDays(punches, at(2026, 10, 7, 9));
+  assert.ok(days.get('2026-10-05').issues.includes('Saída não registrada'));
+  assert.equal(days.get('2026-10-05').work, 0);
+  assert.equal(days.get('2026-10-07').work, HOUR);
+});
+
+test('ocorrências: férias não geram débito, falta gera', () => {
+  const info = { '2026-10-05': { occurrence: 'ferias' }, '2026-10-06': { occurrence: 'falta' } };
+  const r = buildReport('2026-10-05', '2026-10-06', [], settings, info, at(2026, 10, 9, 9));
+  assert.equal(r.rows[0].balance, 0);
+  assert.equal(r.rows[1].balance, -8 * HOUR);
+  assert.equal(r.totals.absences, 1);
+  assert.equal(r.totals.excused, 1);
+});
+
+test('dias futuros não entram no previsto', () => {
+  const r = buildReport('2026-10-09', '2026-10-10', [], settings, {}, at(2026, 10, 9, 9));
+  assert.equal(r.totals.expected, 8 * HOUR);
+  assert.equal(r.totals.balance, 0); // hoje sem marcação não gera débito ainda
+});
+
+test('banco de horas com saldo inicial', () => {
+  const punches = [p('in', at(2026, 10, 5, 8)), p('out', at(2026, 10, 5, 18))];
+  const s = { ...settings, bankStart: '2026-10-05', bankInitial: 60 };
+  assert.equal(hourBank(punches, s, {}, at(2026, 10, 5, 20)), 3 * HOUR);
+});
+
+test('intervalo curto gera alerta', () => {
+  const punches = [p('in', at(2026, 10, 5, 8)), p('break_start', at(2026, 10, 5, 12)),
+    p('break_end', at(2026, 10, 5, 12, 30)), p('out', at(2026, 10, 5, 17))];
+  const days = buildDays(punches, at(2026, 10, 6, 9));
+  const s = summarizeDay('2026-10-05', days, settings, {}, '2026-10-06');
+  assert.ok(s.warnings.some((w) => w.includes('Intervalo menor')));
+});
+
+test('formatação e intervalos de datas', () => {
+  assert.equal(fmtDur(7 * HOUR + 48 * MIN), '7h48');
+  assert.equal(fmtDur(-12 * MIN), '-0h12');
+  assert.equal(fmtDur(5 * MIN, { sign: true }), '+0h05');
+  assert.equal(parseHHMM('08:48'), 528);
+  assert.equal(parseHHMM('x'), null);
+  assert.deepEqual(weekRange('2026-10-09'), ['2026-10-04', '2026-10-10']);
+  assert.deepEqual(monthRange('2026-02-10'), ['2026-02-01', '2026-02-28']);
+  assert.equal(dayKey(at(2026, 1, 2, 23, 59)), '2026-01-02');
+});
