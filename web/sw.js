@@ -1,5 +1,5 @@
 // Mantém o app funcionando sem internet. Ao mudar arquivos, aumente a versão.
-const CACHE = 'smartponto-v1.0.0';
+const CACHE = 'smartponto-v1.0.1';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/calc.js', 'js/store.js', 'js/platform.js',
@@ -18,7 +18,8 @@ self.addEventListener('activate', (e) => {
 
 // Rede primeiro (para receber atualizações); sem conexão, usa o cache.
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.endsWith('.apk')) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {

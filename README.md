@@ -10,7 +10,7 @@ Os dados ficam só no aparelho, sem conta e sem servidor, e o app funciona sem i
 
 | Aparelho | Como |
 | --- | --- |
-| **Android** | Baixe `SmartPonto.apk` na [última Release](../../releases/latest) e instale (permita "instalar apps desconhecidos"). |
+| **Android** | Baixe https://weberdequeiroz.github.io/WDQ-SmartPonto/SmartPonto.apk e instale (permita "instalar apps desconhecidos"). Também fica na [última Release](../../releases/latest). |
 | **iPhone** | Abra o endereço do GitHub Pages no **Safari** → **Compartilhar** → **Adicionar à Tela de Início**. O app abre em tela cheia, como um app nativo. |
 | **Android sem APK** | Abra o mesmo endereço no Chrome → menu → **Instalar app**. |
 

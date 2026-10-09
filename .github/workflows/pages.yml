@@ -1,12 +1,14 @@
-name: Publicar SmartPonto (iPhone / navegador)
+name: Publicar SmartPonto (site, iPhone e APK)
 
-# Publica web/ no GitHub Pages. No iPhone, abra o endereço no Safari e use
-# Compartilhar > Adicionar à Tela de Início. Requer Settings > Pages > Source: GitHub Actions.
+# Publica o app web e o APK no GitHub Pages:
+#   https://<usuário>.github.io/<repositório>/               app para iPhone e navegador
+#   https://<usuário>.github.io/<repositório>/SmartPonto.apk  download direto do APK
+# Requer Settings > Pages > Source: GitHub Actions.
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['web/**']
+    paths: ['web/**', 'app/**', '.github/workflows/pages.yml']
 
 permissions:
   contents: read
@@ -25,9 +27,28 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Gerar APK
+        run: gradle assembleDebug --no-daemon
+
+      - name: Montar site
+        run: |
+          mkdir site
+          cp -r web/. site/
+          cp app/build/outputs/apk/debug/*.apk site/SmartPonto.apk
+
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web
+          path: site
       - id: deployment
         uses: actions/deploy-pages@v4

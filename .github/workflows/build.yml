@@ -53,7 +53,7 @@ jobs:
           tag_name: v${{ env.VERSION }}-build${{ github.run_number }}
           name: WDQ SmartPonto ${{ env.VERSION }} (build ${{ github.run_number }})
           body: |
-            **Android:** baixe `SmartPonto.apk` e instale (permita instalar apps de fontes desconhecidas).
+            **Android:** baixe `SmartPonto.apk` abaixo ou direto em https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/SmartPonto.apk e instale (permita instalar apps de fontes desconhecidas).
             **iPhone:** abra https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/ no Safari e toque em Compartilhar > Adicionar à Tela de Início.
           files: |
             SmartPonto.apk
