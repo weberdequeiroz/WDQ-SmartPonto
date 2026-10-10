@@ -113,3 +113,27 @@ test('jornada semanal personalizada', () => {
   assert.equal(expectedMinutes('2026-10-09', s, {}), 240); // sexta
   assert.equal(scheduleSummary(s), '44h00 semanais');
 });
+
+test('pausa remunerada conta como trabalho e refeição não', () => {
+  const punches = [
+    { id: '1', type: 'in', ts: at(2026, 10, 5, 8), mode: 'remoto' },
+    { id: '2', type: 'break_start', ts: at(2026, 10, 5, 10), reason: 'Café' },
+    { id: '3', type: 'break_end', ts: at(2026, 10, 5, 10, 15) },
+    { id: '4', type: 'break_start', ts: at(2026, 10, 5, 12), reason: 'Refeição' },
+    { id: '5', type: 'break_end', ts: at(2026, 10, 5, 13) },
+    { id: '6', type: 'out', ts: at(2026, 10, 5, 17) },
+  ];
+  const d = buildDays(punches, at(2026, 10, 6, 9)).get('2026-10-05');
+  assert.equal(d.work, 8 * HOUR);
+  assert.equal(d.breaks, HOUR);
+  assert.equal(d.paidBreaks, 15 * MIN);
+  assert.equal(d.mode, 'remoto');
+  const r = buildReport('2026-10-05', '2026-10-05', punches, settings, {}, at(2026, 10, 6, 9));
+  assert.deepEqual(r.totals.modes, { remoto: 1 });
+});
+
+test('descanso entre jornadas menor que 11h', () => {
+  const punches = [p('in', at(2026, 10, 5, 14)), p('out', at(2026, 10, 5, 23)), p('in', at(2026, 10, 6, 7)), p('out', at(2026, 10, 6, 15))];
+  const days = buildDays(punches, at(2026, 10, 7, 9));
+  assert.ok(days.get('2026-10-06').issues.some((i) => i.includes('Descanso entre jornadas de 8h00')));
+});

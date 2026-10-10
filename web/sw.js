@@ -1,8 +1,8 @@
 // Mantém o app funcionando sem internet. Ao mudar arquivos, aumente a versão.
-const CACHE = 'smartponto-v1.1.0';
+const CACHE = 'smartponto-v1.2.0';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/calc.js', 'js/store.js', 'js/platform.js',
+  'js/app.js', 'js/calc.js', 'js/store.js', 'js/platform.js', 'js/reminders.js', 'js/alarms.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png',
 ];
 

@@ -99,14 +99,14 @@ svg.i { width: 22px; height: 22px; flex: none; stroke: currentColor; fill: none;
 
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(5, 1fr);
   padding: 6px 8px calc(6px + var(--safe-bottom));
   background: var(--surface); border-top: 1px solid var(--border);
 }
 .tabbar button {
   border: 0; background: none; color: var(--muted);
   display: flex; flex-direction: column; align-items: center; gap: 2px;
-  font-size: 12px; padding: 6px 0; border-radius: 12px;
+  font-size: 11px; padding: 6px 0; border-radius: 12px;
 }
 .tabbar button.active { color: var(--brand); font-weight: 600; }
 :root[data-theme="dark"] .tabbar button.active { color: #a5b4fc; }
@@ -303,6 +303,73 @@ textarea.input { min-height: 80px; resize: vertical; }
 .list-btn:last-child { border-bottom: 0; }
 .list-btn svg.i { color: var(--brand); }
 .list-btn.danger, .list-btn.danger svg.i { color: var(--neg); }
+
+/* ---------- Pausas ---------- */
+.action.a-meal svg { color: var(--c-break); }
+.action.a-pause svg { color: var(--c-back); }
+.paid-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: rgba(21, 128, 61, .12); color: var(--pos); white-space: nowrap; vertical-align: 1px; }
+.reason-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.reason-item { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-2); }
+.reason-item svg.i { color: var(--brand); }
+.reason-item:active { transform: scale(.99); }
+
+/* ---------- Lembretes ---------- */
+.big-btn { min-height: 54px; font-size: 17px; margin-bottom: 14px; border-radius: 16px; }
+.warn-card { border-color: var(--accent); }
+.warn-card b { display: flex; align-items: center; gap: 8px; }
+.warn-card .btn { min-height: 40px; font-size: 14px; }
+.empty-rem { text-align: center; }
+.empty-rem > svg.i { width: 40px; height: 40px; color: var(--brand); margin: 6px auto; display: block; }
+.empty-rem .chip { cursor: pointer; }
+.rem-card { display: flex; align-items: center; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 10px; padding-right: 12px; box-shadow: var(--shadow); }
+.rem-card.off { opacity: .55; }
+.rem-main { flex: 1; min-width: 0; display: flex; gap: 12px; align-items: flex-start; text-align: left; border: 0; background: none; padding: 14px 4px 14px 14px; }
+.rem-main b { display: block; font-size: 16px; }
+.rem-desc { display: flex; gap: 4px; align-items: flex-start; margin-top: 2px; }
+.rem-desc svg.i { width: 14px; height: 14px; margin-top: 3px; }
+.rem-next { display: inline-block; margin-top: 6px; padding: 2px 9px; border-radius: 99px; background: var(--surface-2); color: var(--brand); font-weight: 700; }
+.rem-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none; background: var(--surface-2); color: var(--brand); }
+.rem-ico.alarm { background: linear-gradient(140deg, var(--brand), var(--brand-2)); color: #fff; }
+.rem-ico.small-ico { width: 32px; height: 32px; border-radius: 10px; }
+.rem-ico.small-ico svg.i { width: 18px; height: 18px; }
+.switch-mini input { width: 46px; height: 28px; appearance: none; -webkit-appearance: none; background: var(--border); border-radius: 99px; position: relative; display: block; transition: background .2s; }
+.switch-mini input::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); }
+.switch-mini input:checked { background: var(--brand); }
+.switch-mini input:checked::after { transform: translateX(18px); }
+.day-picker { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.day-picker button { min-height: 42px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); font-weight: 600; font-size: 13px; text-transform: capitalize; padding: 0; }
+.day-picker button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.seg button svg.i { width: 18px; height: 18px; vertical-align: -4px; margin-right: 4px; }
+details.more { border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; margin: 4px 0 12px; }
+details.more summary { cursor: pointer; font-weight: 600; color: var(--muted); }
+details.more[open] summary { margin-bottom: 10px; }
+.preview { background: var(--surface-2); border-radius: 14px; padding: 12px 14px; }
+.preview .small { display: flex; gap: 6px; }
+.preview .small svg.i { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+.preview ul { margin: 8px 0 0; padding-left: 20px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.preview li { margin: 2px 0; }
+
+/* ---------- Alarme em tela cheia ---------- */
+.alarm-screen {
+  position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; justify-content: space-between;
+  padding: calc(40px + var(--safe-top)) 24px calc(28px + var(--safe-bottom));
+  background: radial-gradient(120% 80% at 50% 0%, #4c1d95 0%, #1e1b4b 55%, #0b0a24 100%); color: #fff;
+  animation: fade .25s; overflow: hidden;
+}
+.alarm-glow { position: absolute; inset: -30%; background: radial-gradient(circle at 50% 35%, rgba(251, 191, 36, .25), transparent 40%); animation: glow 2.2s ease-in-out infinite; pointer-events: none; }
+@keyframes glow { 50% { transform: scale(1.15); opacity: .6; } }
+.alarm-body { position: relative; text-align: center; margin-top: 4vh; }
+.alarm-ring { width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 18px; display: grid; place-items: center; background: rgba(255, 255, 255, .1); box-shadow: 0 0 0 10px rgba(255, 255, 255, .05), 0 0 0 22px rgba(255, 255, 255, .03); animation: ring 1.2s ease-in-out infinite; }
+.alarm-ring svg.i { width: 46px; height: 46px; color: #fbbf24; }
+.alarm-screen.soft .alarm-ring { animation: none; }
+@keyframes ring { 0%, 100% { transform: rotate(0); } 10% { transform: rotate(-12deg); } 20% { transform: rotate(12deg); } 30% { transform: rotate(-8deg); } 40% { transform: rotate(8deg); } 50% { transform: rotate(0); } }
+.alarm-time { font-size: 64px; font-weight: 200; letter-spacing: 2px; font-variant-numeric: tabular-nums; line-height: 1; }
+.alarm-title { font-size: 26px; font-weight: 700; margin-top: 18px; }
+.alarm-text { font-size: 16px; opacity: .8; margin-top: 8px; white-space: pre-line; }
+.alarm-actions { position: relative; display: flex; flex-direction: column; gap: 12px; max-width: 420px; width: 100%; margin: 0 auto; }
+.alarm-done { min-height: 60px; border-radius: 99px; border: 0; background: #fff; color: #1e1b4b; font-size: 18px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.alarm-snooze { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.alarm-snooze button { min-height: 48px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, .3); background: rgba(255, 255, 255, .08); color: #fff; font-weight: 600; font-size: 14px; }
 
 /* ---------- Painéis (sheets) ---------- */
 .sheet-backdrop {

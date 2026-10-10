@@ -1,18 +1,25 @@
 import {
-  PUNCH_TYPES, BREAK_REASONS, OCCURRENCES, WEEKDAYS, MONTHS, MIN, HOUR,
-  buildDays, buildReport, summarizeDay, currentState, hourBank, allowedActions, suggestedNext,
+  PUNCH_TYPES, BREAK_REASONS, OCCURRENCES, WORK_MODES, WEEKDAYS, MONTHS, MIN, HOUR, isPaidBreak,
+  buildDays, buildReport, summarizeDay, currentState, hourBank, suggestedNext,
   dayKey, parseDay, addDays, hhmm, fmtDur, fmtClock, fmtDay, fmtDayLong, parseHHMM, minutesToHHMM,
   weekRange, monthRange, yearRange, plannedMinutes, scheduleSummary,
 } from './calc.js';
 import {
   state, openStore, addPunch, updatePunch, deletePunch, saveSettings, setDayInfo,
-  markBackup, exportBackup, importBackup, wipeAll,
+  markBackup, exportBackup, importBackup, wipeAll, saveReminder, deleteReminder,
 } from './store.js';
 import {
   isAndroidApp, isIOS, isStandalone, shareFile, saveFile, printPage, shareText, vibrate, getLocation, setThemeColor,
+  nativeAlarmStatus, nativeRequestNotifications, nativeOpenSettings, nativeTestAlarm, openCalendarFile,
 } from './platform.js';
+import {
+  RULE_TYPES, describe, nextOccurrence, occurrences, toICS, newReminder, holidayName,
+} from './reminders.js';
+import {
+  syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
+} from './alarms.js';
 
-export const VERSION = '1.1.0';
+export const VERSION = '1.2.0';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -46,6 +53,18 @@ const ICONS = {
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
   info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h0"/>',
   bank: '<path d="M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 21h18"/>',
+  meal: '<path d="M3 2v7a3 3 0 0 0 3 3v10M9 2v7a3 3 0 0 1-3 3M6 2v5M18 22V2c-2.5 1.5-4 4-4 8v3h4"/>',
+  pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
+  car: '<path d="M5 17h14M6 17v2M18 17v2M3 13l2-6a2 2 0 0 1 2-1h10a2 2 0 0 1 2 1l2 6v4H3v-4zM3 13h18"/><circle cx="7.5" cy="15" r=".5"/><circle cx="16.5" cy="15" r=".5"/>',
+  book: '<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2zM22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/>',
+  health: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21.2l8.8-8.8a5.5 5.5 0 0 0 0-7.8z"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1"/>',
+  more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
+  bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/>',
+  alarm: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3L2 6M22 6l-3-3"/>',
+  repeat: '<path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/>',
+  check: '<path d="M20 6L9 17l-5-5"/>',
+  home: '<path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
 };
 const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
@@ -53,6 +72,7 @@ const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria
 const VIEWS = {
   home: { title: 'Ponto', icon: 'clock', label: 'Ponto', render: renderHome },
   history: { title: 'Histórico', icon: 'calendar', label: 'Histórico', render: renderHistory },
+  reminders: { title: 'Lembretes', icon: 'bell', label: 'Lembretes', render: renderReminders },
   reports: { title: 'Relatórios', icon: 'chart', label: 'Relatórios', render: renderReports },
   settings: { title: 'Ajustes', icon: 'gear', label: 'Ajustes', render: renderSettings },
 };
@@ -76,6 +96,7 @@ function render() {
   $('#view').innerHTML = v.render();
   v.mount?.();
   bindView();
+  syncAlarms();
 }
 
 // Ações declarativas: data-act="nome" data-arg="valor".
@@ -135,7 +156,10 @@ const ACTION_HINT = {
   break_start: 'Refeição, café, pausa…',
   break_end: 'Voltar ao trabalho',
   out: 'Encerrar a jornada',
+  meal: 'Saída para almoço / jantar',
+  pause: 'Café, serviço externo, médico…',
 };
+const reasonInfo = (label) => BREAK_REASONS.find((r) => r.label === label);
 
 async function punch(type, extra = {}) {
   const ts = Date.now();
@@ -158,16 +182,39 @@ async function punch(type, extra = {}) {
 }
 
 ACTIONS.punch = (type) => {
-  if (type === 'break_start') return openBreakSheet();
+  if (type === 'meal') return punch('break_start', { reason: 'Refeição' });
+  if (type === 'break_start' || type === 'pause') return openBreakSheet();
+  if (type === 'in') {
+    if (state.settings.askMode) return openModeSheet();
+    return punch('in', { mode: state.settings.defaultMode || 'presencial' });
+  }
   return punch(type);
 };
 
+function openModeSheet() {
+  openSheet(`
+    <h3>Entrada</h3>
+    <p class="sub">Onde você vai trabalhar hoje?</p>
+    <div class="reasons">
+      ${Object.entries(WORK_MODES).map(([k, v]) => `<button class="btn ${k === state.settings.defaultMode ? 'primary' : ''}" data-mode="${k}">${esc(v)}</button>`).join('')}
+    </div>
+    <button class="btn ghost block" data-close>Cancelar</button>`, (s) => {
+    $$('[data-mode]', s).forEach((b) => b.addEventListener('click', () => {
+      closeSheet();
+      punch('in', { mode: b.dataset.mode });
+    }));
+  });
+}
+
 function openBreakSheet() {
   openSheet(`
-    <h3>Início de intervalo</h3>
-    <p class="sub">Qual o motivo da pausa?</p>
-    <div class="reasons">
-      ${BREAK_REASONS.map((r) => `<button class="btn" data-reason="${esc(r)}">${esc(r)}</button>`).join('')}
+    <h3>Pausa</h3>
+    <p class="sub">Escolha o motivo. As marcadas com <span class="paid-tag">conta como trabalho</span> não descontam da jornada.</p>
+    <div class="reason-list">
+      ${BREAK_REASONS.map((r) => `<button class="reason-item" data-reason="${esc(r.label)}">
+        ${icon(r.icon)}<span class="grow"><b>${esc(r.label)}</b><br><span class="small muted">${esc(r.hint)}</span></span>
+        ${r.paid ? '<span class="paid-tag">conta como trabalho</span>' : ''}
+      </button>`).join('')}
     </div>
     <button class="btn ghost block" data-close>Cancelar</button>`, (s) => {
     $$('[data-reason]', s).forEach((b) => b.addEventListener('click', () => {
@@ -198,7 +245,12 @@ function openPunchEditor(existing, presetDay) {
     </label>
     <label class="field" data-reason-field><span>Motivo do intervalo</span>
       <select class="input" name="reason">
-        ${BREAK_REASONS.map((r) => `<option ${r === (existing?.reason || 'Refeição') ? 'selected' : ''}>${r}</option>`).join('')}
+        ${BREAK_REASONS.map((r) => `<option value="${esc(r.label)}" ${r.label === (existing?.reason || 'Refeição') ? 'selected' : ''}>${esc(r.label)}${r.paid ? ' (conta como trabalho)' : ''}</option>`).join('')}
+      </select>
+    </label>
+    <label class="field" data-mode-field><span>Modalidade</span>
+      <select class="input" name="mode">
+        ${Object.entries(WORK_MODES).map(([k, v]) => `<option value="${k}" ${k === (existing?.mode || state.settings.defaultMode) ? 'selected' : ''}>${esc(v)}</option>`).join('')}
       </select>
     </label>
     <label class="field"><span>Observação</span><input class="input" name="note" maxlength="200" value="${esc(existing?.note || '')}" placeholder="Opcional"></label>
@@ -208,7 +260,10 @@ function openPunchEditor(existing, presetDay) {
       <button class="btn primary" data-save>Salvar</button>
     </div>`, (s) => {
     const typeSel = $('[name=type]', s);
-    const syncReason = () => { $('[data-reason-field]', s).style.display = typeSel.value === 'break_start' ? '' : 'none'; };
+    const syncReason = () => {
+      $('[data-reason-field]', s).style.display = typeSel.value === 'break_start' ? '' : 'none';
+      $('[data-mode-field]', s).style.display = typeSel.value === 'in' ? '' : 'none';
+    };
     typeSel.addEventListener('change', syncReason);
     syncReason();
     $('[data-save]', s).addEventListener('click', async () => {
@@ -224,6 +279,7 @@ function openPunchEditor(existing, presetDay) {
         type: typeSel.value,
         note: $('[name=note]', s).value.trim(),
         reason: typeSel.value === 'break_start' ? $('[name=reason]', s).value : undefined,
+        mode: typeSel.value === 'in' ? $('[name=mode]', s).value : undefined,
       };
       if (existing) await updatePunch(existing.id, { ...data, edited: true });
       else await addPunch({ ...data, manual: true });
@@ -246,6 +302,7 @@ ACTIONS.addPunch = (day) => openPunchEditor(null, day);
 function punchLabel(p) {
   let s = PUNCH_TYPES[p.type].label;
   if (p.type === 'break_start' && p.reason) s += ` · ${p.reason}`;
+  if (p.type === 'in' && p.mode && WORK_MODES[p.mode]) s += ` · ${WORK_MODES[p.mode]}`;
   return s;
 }
 
@@ -256,7 +313,7 @@ function timelineHTML(punches) {
       <span class="tag t-${p.type}"></span>
       <span class="time">${hhmm(p.ts)}</span>
       <span class="grow">
-        <div>${esc(punchLabel(p))}</div>
+        <div>${esc(punchLabel(p))}${p.type === 'break_start' && isPaidBreak(p.reason) ? ' <span class="paid-tag">remunerada</span>' : ''}</div>
         ${p.note || p.manual || p.edited || p.loc ? `<div class="small muted">${[
           p.manual ? 'manual' : '', p.edited ? 'ajustada' : '', p.loc ? 'com local' : '', esc(p.note || ''),
         ].filter(Boolean).join(' · ')}</div>` : ''}
@@ -290,16 +347,22 @@ function homeStats(now = Date.now()) {
 
 function statusText(st, now = Date.now()) {
   if (st.state === 'working') return `Trabalhando desde ${hhmm(st.since)} · ${fmtDur(now - st.since)}`;
-  if (st.state === 'break') return `Em intervalo${st.last?.reason ? ` (${st.last.reason})` : ''} · ${fmtDur(now - st.since)}`;
+  if (st.state === 'break') {
+    const r = st.last?.reason;
+    const label = r === 'Refeição' ? 'Em refeição' : r ? `Em pausa (${r}${isPaidBreak(r) ? ', conta como trabalho' : ''})` : 'Em intervalo';
+    return `${label} desde ${hhmm(st.since)} · ${fmtDur(now - st.since)}`;
+  }
   return 'Fora do expediente';
 }
 
 function renderHome() {
   const now = Date.now();
   const { st, s, forecast, bank } = homeStats(now);
-  const allowed = allowedActions(st.state);
   const main = suggestedNext(st.state);
-  const others = allowed.filter((t) => t !== main);
+  const others = st.state === 'working' ? ['meal', 'pause'] : st.state === 'break' ? ['out'] : [];
+  const onMeal = st.state === 'break' && st.last?.reason === 'Refeição';
+  const mainLabel = main === 'break_end' ? (onMeal ? 'Voltar da refeição' : 'Voltar da pausa') : PUNCH_TYPES[main].label;
+  const label = (t) => (t === 'meal' ? 'Refeição' : t === 'pause' ? 'Pausa' : PUNCH_TYPES[t].short);
   const pct = s.expected ? Math.min(100, Math.round((s.work / s.expected) * 100)) : 0;
   const d = new Date(now);
   const occ = state.dayInfo[today()]?.occurrence;
@@ -321,11 +384,11 @@ function renderHome() {
 
     <section class="actions">
       <button class="action main a-${main}" data-act="punch" data-arg="${main}">
-        ${icon(main)}<div><strong>${PUNCH_TYPES[main].label}</strong><br><span>${ACTION_HINT[main]}</span></div>
+        ${icon(main)}<div><strong>${mainLabel}</strong><br><span>${ACTION_HINT[main]}</span></div>
       </button>
       ${others.map((t) => `
         <button class="action a-${t} ${others.length === 1 ? 'wide' : ''}" data-act="punch" data-arg="${t}">
-          ${icon(t)}<strong>${PUNCH_TYPES[t].short}</strong><span>${ACTION_HINT[t]}</span>
+          ${icon(t)}<strong>${label(t)}</strong><span>${ACTION_HINT[t]}</span>
         </button>`).join('')}
     </section>
 
@@ -347,6 +410,8 @@ function renderHome() {
       <div class="small muted">Acumulado ${state.settings.bankStart ? `desde ${fmtDay(state.settings.bankStart, { weekday: false })}` : 'desde a primeira marcação'}</div>
     </section>
 
+    ${homeRemindersHTML(now)}
+
     <section class="card">
       <div class="row between" style="margin-bottom:6px">
         <h2 style="margin:0">Marcações de hoje</h2>
@@ -355,6 +420,22 @@ function renderHome() {
       ${timelineHTML(s.punches)}
       ${s.warnings.length ? `<div class="banner" style="margin:10px 0 0">${icon('warn')}<span>${s.warnings.map(esc).join('<br>')}</span></div>` : ''}
     </section>`;
+}
+
+function homeRemindersHTML(now) {
+  const next = upcomingAlarms(now, now + 36 * HOUR).filter((a) => a.rid).slice(0, 3);
+  return `<section class="card">
+    <div class="row between" style="margin-bottom:6px">
+      <h2 style="margin:0">Próximos lembretes</h2>
+      <button class="link" data-act="newReminder" aria-label="Criar lembrete">${icon('plus')}</button>
+    </div>
+    ${next.length ? `<ul class="timeline">${next.map((a) => `<li>
+      <span class="rem-ico small-ico ${a.style === 'alarm' ? 'alarm' : ''}">${icon(a.style === 'alarm' ? 'alarm' : 'bell')}</span>
+      <span class="grow"><div><b>${esc(a.title)}</b></div><div class="small muted">${whenLabel(a.at)}</div></span>
+      <button class="link" data-act="editReminder" data-arg="${a.rid}" aria-label="Editar">${icon('edit')}</button>
+    </li>`).join('')}</ul>`
+      : `<button class="btn block" data-act="newReminder">${icon('bell')} Criar lembrete</button>`}
+  </section>`;
 }
 
 // Atualiza relógio e números ao vivo sem redesenhar a tela.
@@ -564,7 +645,9 @@ function renderReports() {
         <div class="stat"><div class="k">Dias trabalhados</div><div class="v">${t.daysWorked}</div></div>
         <div class="stat"><div class="k">Média por dia</div><div class="v">${fmtDur(t.avgPerDay)}</div></div>
         <div class="stat"><div class="k">Faltas / abonos</div><div class="v">${t.absences} / ${t.excused}</div></div>
+        <div class="stat"><div class="k">Intervalos</div><div class="v">${fmtDur(t.breaks)}</div><div class="s">+ ${fmtDur(t.paidBreaks)} de pausas pagas</div></div>
       </div>
+      ${Object.keys(t.modes).length ? `<div class="chips" style="margin-top:12px">${Object.entries(t.modes).map(([k, n]) => `<span class="chip">${esc(WORK_MODES[k] || k)}: ${n} ${n > 1 ? 'dias' : 'dia'}</span>`).join('')}</div>` : ''}
     </section>
 
     ${chartItems.length ? `<section class="card"><h2>Horas por ${yearly ? 'mês' : 'dia'}</h2>${chartSVG(chartItems)}</section>` : ''}
@@ -622,18 +705,19 @@ function fileStamp(range) {
 ACTIONS.repCsv = async () => {
   const range = reportRange();
   const rep = currentReport();
-  const head = ['Data', 'Dia da semana', 'Ocorrência', 'Marcações', 'Primeira entrada', 'Última saída', 'Trabalhado', 'Intervalos', 'Previsto', 'Saldo', 'Alertas', 'Observação'];
+  const head = ['Data', 'Dia da semana', 'Ocorrência', 'Modalidade', 'Marcações', 'Primeira entrada', 'Última saída', 'Trabalhado', 'Intervalos', 'Pausas remuneradas', 'Previsto', 'Saldo', 'Alertas', 'Observação'];
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = rep.rows.filter((r) => !r.future).map((r) => [
     fmtDay(r.key, { weekday: false }), WEEKDAYS[parseDay(r.key).getDay()],
     r.occurrence ? OCCURRENCES[r.occurrence].label : '',
-    r.punches.map((p) => `${PUNCH_TYPES[p.type].short} ${hhmm(p.ts)}`).join(' | '),
+    r.mode ? WORK_MODES[r.mode] || r.mode : '',
+    r.punches.map((p) => `${PUNCH_TYPES[p.type].short}${p.reason ? ` (${p.reason})` : ''} ${hhmm(p.ts)}`).join(' | '),
     r.firstIn ? hhmm(r.firstIn) : '', r.lastOut ? hhmm(r.lastOut) : '',
-    fmtClock(r.work), fmtClock(r.breaks), fmtClock(r.expected), fmtClock(r.balance),
+    fmtClock(r.work), fmtClock(r.breaks), fmtClock(r.paidBreaks), fmtClock(r.expected), fmtClock(r.balance),
     r.warnings.join('; '), r.note,
   ].map(q).join(';'));
   const t = rep.totals;
-  lines.push(['TOTAL', '', '', '', '', '', fmtClock(t.work), fmtClock(t.breaks), fmtClock(t.expected), fmtClock(t.balance), '', ''].map(q).join(';'));
+  lines.push(['TOTAL', '', '', '', '', '', '', fmtClock(t.work), fmtClock(t.breaks), fmtClock(t.paidBreaks), fmtClock(t.expected), fmtClock(t.balance), '', ''].map(q).join(';'));
   // BOM + ponto e vírgula para o Excel em português abrir com acentos e colunas corretas.
   const csv = `﻿${head.map(q).join(';')}\n${lines.join('\n')}\n`;
   await shareFile(`smartponto-relatorio-${fileStamp(range)}.csv`, 'text/csv', csv);
@@ -818,6 +902,32 @@ function renderSettings() {
     </section>
 
     <section class="card">
+      <h2>Alertas do ponto</h2>
+      <p class="small muted" style="margin-top:0">Avisos automáticos conforme suas marcações${isAndroidApp ? ', inclusive com o app fechado' : ' (com o app aberto)'}.</p>
+      <label class="switch"><span><b>Lembrar de marcar a entrada</b><br><span class="small muted">Nos dias de jornada, se ainda não marcou</span></span><input type="checkbox" data-set="alertEntry" ${s.alertEntry ? 'checked' : ''}></label>
+      <label class="field" style="margin:8px 0 4px"><span>Horário do lembrete de entrada</span><input class="input" type="time" data-set="alertEntryTime" value="${esc(s.alertEntryTime)}"></label>
+      <label class="switch"><span><b>Fim do intervalo de refeição</b><br><span class="small muted">Avisa quando completar o tempo de refeição</span></span><input type="checkbox" data-set="alertMealEnd" ${s.alertMealEnd ? 'checked' : ''}></label>
+      <label class="field" style="margin:8px 0 4px"><span>Duração da refeição</span>
+        <select class="input" data-set="mealMinutes">${[15, 20, 30, 45, 60, 75, 90, 120].map((m) => `<option value="${m}" ${Number(s.mealMinutes) === m ? 'selected' : ''}>${m >= 60 ? fmtDur(m * MIN) : `${m} min`}</option>`).join('')}</select>
+      </label>
+      <label class="switch"><span><b>6 horas sem intervalo</b><br><span class="small muted">Avisa 15 min antes de completar 6h sem refeição</span></span><input type="checkbox" data-set="alertNoBreak" ${s.alertNoBreak ? 'checked' : ''}></label>
+      <label class="switch"><span><b>Jornada cumprida</b><br><span class="small muted">Avisa na hora de sair</span></span><input type="checkbox" data-set="alertJourneyDone" ${s.alertJourneyDone ? 'checked' : ''}></label>
+      <label class="switch"><span><b>Esqueceu a saída?</b><br><span class="small muted">2h depois do fim da jornada sem saída</span></span><input type="checkbox" data-set="alertForgotOut" ${s.alertForgotOut ? 'checked' : ''}></label>
+      <label class="field" style="margin:12px 0 0"><span>Tipo de aviso</span>
+        <select class="input" data-set="alertStyle"><option value="notify" ${s.alertStyle !== 'alarm' ? 'selected' : ''}>Notificação</option><option value="alarm" ${s.alertStyle === 'alarm' ? 'selected' : ''}>Alarme em tela cheia</option></select>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>Modalidade e feriados</h2>
+      <label class="field"><span>Modalidade padrão da entrada</span>
+        <select class="input" data-set="defaultMode">${Object.entries(WORK_MODES).map(([k, v]) => `<option value="${k}" ${s.defaultMode === k ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
+      </label>
+      <label class="switch"><span><b>Perguntar a modalidade na entrada</b><br><span class="small muted">Presencial, home office, externo ou viagem</span></span><input type="checkbox" data-set="askMode" ${s.askMode ? 'checked' : ''}></label>
+      <label class="switch"><span><b>Considerar feriados nacionais</b><br><span class="small muted">Para “dias úteis” nos lembretes (inclui Carnaval, Sexta-feira Santa e Corpus Christi)</span></span><input type="checkbox" data-set="holidays" ${s.holidays !== false ? 'checked' : ''}></label>
+    </section>
+
+    <section class="card">
       <h2>Registro</h2>
       <label class="switch"><span><b>Confirmar antes de marcar</b><br><span class="small muted">Evita toques acidentais</span></span><input type="checkbox" data-set="confirmPunch" ${s.confirmPunch ? 'checked' : ''}></label>
       <label class="switch"><span><b>Salvar localização</b><br><span class="small muted">Guarda onde cada ponto foi marcado</span></span><input type="checkbox" data-set="geolocation" ${s.geolocation ? 'checked' : ''}></label>
@@ -854,7 +964,7 @@ VIEWS.settings.mount = () => {
     const evt = el.type === 'checkbox' || el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input';
     el.addEventListener(evt, async () => {
       let v = el.type === 'checkbox' ? el.checked : el.value;
-      if (key === 'tolerance' || key === 'backupReminderDays') v = Math.max(0, Number(v) || 0);
+      if (key === 'tolerance' || key === 'backupReminderDays' || key === 'mealMinutes') v = Math.max(0, Number(v) || 0);
       if (key === 'bankInitial') {
         const neg = v.trim().startsWith('-');
         const m = parseHHMM(v.replace('-', ''));
@@ -863,6 +973,7 @@ VIEWS.settings.mount = () => {
       }
       await saveSettings({ [key]: v });
       if (key === 'theme') applyTheme();
+      syncAlarms();
     });
   });
   // Campos de duração: valida, normaliza para HH:MM e salva.
@@ -1022,6 +1133,359 @@ ACTIONS.wipe = async () => {
   toast('Dados apagados');
 };
 
+// ---------- Tela: Lembretes ----------
+const ADVANCE_OPTIONS = [[0, 'Na hora'], [5, '5 min antes'], [10, '10 min antes'], [15, '15 min antes'], [30, '30 min antes'], [60, '1 hora antes'], [120, '2 horas antes'], [1440, '1 dia antes']];
+const NTH_OPTIONS = [[1, '1º'], [2, '2º'], [3, '3º'], [4, '4º'], [5, '5º'], [6, '6º'], [7, '7º'], [8, '8º'], [10, '10º'], [15, '15º'], [-1, 'Último']];
+const NTH_WD_OPTIONS = [[1, '1ª'], [2, '2ª'], [3, '3ª'], [4, '4ª'], [-1, 'Última']];
+
+function whenLabel(ts, now = Date.now()) {
+  const k = dayKey(ts);
+  const t = today();
+  const prefix = k === t ? 'Hoje' : k === addDays(t, 1) ? 'Amanhã' : fmtDay(k, { year: parseDay(k).getFullYear() !== new Date(now).getFullYear() });
+  return `${prefix} às ${hhmm(ts)}`;
+}
+
+function permissionBanner() {
+  const st = nativeAlarmStatus();
+  if (st) {
+    const items = [];
+    if (!st.notifications) items.push(['notifications', 'Permitir notificações']);
+    if (!st.exact) items.push(['exact', 'Permitir alarmes no horário exato']);
+    if (!st.fullScreen) items.push(['fullscreen', 'Permitir alarme em tela cheia']);
+    if (!st.battery) items.push(['battery', 'Não economizar bateria no SmartPonto']);
+    if (!items.length) return '';
+    return `<div class="card warn-card">
+      <b>${icon('warn')} Libere os avisos para não perder lembretes</b>
+      <p class="small muted" style="margin:6px 0 10px">O Android precisa dessas permissões para tocar o alarme com o app fechado e na tela bloqueada.</p>
+      <div class="btn-row">${items.map(([k, l]) => `<button class="btn" data-act="permit" data-arg="${k}">${l}</button>`).join('')}</div>
+    </div>`;
+  }
+  const canNotify = 'Notification' in window;
+  return `<div class="card warn-card">
+    <b>${icon('info')} ${isIOS ? 'No iPhone' : 'No navegador'}, o alarme toca com o app aberto</b>
+    <p class="small muted" style="margin:6px 0 10px">Para ser avisado com o app fechado e na tela bloqueada, adicione os lembretes à agenda do celular: a agenda avisa no horário certo, com a mesma repetição.</p>
+    <div class="btn-row">
+      <button class="btn primary" data-act="icsAll">${icon('calendar')} Adicionar todos à agenda</button>
+      ${canNotify && Notification.permission === 'default' ? `<button class="btn" data-act="webNotif">${icon('bell')} Permitir notificações</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function renderReminders() {
+  const now = Date.now();
+  const ctx = reminderCtx();
+  const items = state.reminders.map((r) => ({ r, next: r.active ? nextOccurrence(r, now, ctx) : null }));
+  const active = items.filter((x) => x.r.active && x.next).sort((a, b) => a.next.at - b.next.at);
+  const ended = items.filter((x) => x.r.active && !x.next);
+  const paused = items.filter((x) => !x.r.active);
+  const auto = upcomingAlarms(now, now + 24 * HOUR).filter((a) => a.id.startsWith('auto:'));
+
+  const card = ({ r, next }) => `
+    <div class="rem-card ${r.active ? '' : 'off'}">
+      <button class="rem-main" data-act="editReminder" data-arg="${r.id}">
+        <span class="rem-ico ${r.style === 'alarm' ? 'alarm' : ''}">${icon(r.style === 'alarm' ? 'alarm' : 'bell')}</span>
+        <span class="grow">
+          <b>${esc(r.title || 'Lembrete')}</b>
+          <span class="small muted rem-desc">${icon('repeat')} ${esc(describe(r))}</span>
+          ${next ? `<span class="small rem-next">${whenLabel(next.at)}</span>` : r.active ? '<span class="small muted">Sem próximas datas</span>' : '<span class="small muted">Pausado</span>'}
+        </span>
+      </button>
+      <label class="switch-mini" aria-label="Ativar ${esc(r.title)}"><input type="checkbox" data-act="toggleReminder" data-arg="${r.id}" ${r.active ? 'checked' : ''}></label>
+    </div>`;
+
+  return `
+    <button class="btn primary block big-btn" data-act="newReminder">${icon('plus')} Criar lembrete</button>
+    ${permissionBanner()}
+    ${state.reminders.length ? '' : `<div class="card empty-rem">
+      ${icon('bell')}
+      <b>Nenhum lembrete ainda</b>
+      <p class="small muted">Ex.: “Enviar relatório” no 1º dia útil do mês, “Beber água” a cada 1h, “Reunião de equipe” toda segunda às 9h.</p>
+      <div class="chips" style="justify-content:center">
+        ${QUICK_REMINDERS.map((q, i) => `<button class="chip" data-act="quickReminder" data-arg="${i}">${esc(q.title)}</button>`).join('')}
+      </div>
+    </div>`}
+    ${active.length ? `<h2 class="section-title">Próximos</h2>${active.map(card).join('')}` : ''}
+    ${paused.length ? `<h2 class="section-title">Pausados</h2>${paused.map(card).join('')}` : ''}
+    ${ended.length ? `<h2 class="section-title">Concluídos</h2>${ended.map(card).join('')}` : ''}
+    ${auto.length ? `<h2 class="section-title">Alertas do ponto nas próximas 24h</h2>
+      <div class="card">${auto.map((a) => `<div class="row" style="padding:6px 0">${icon('clock', 'muted')}<span class="grow"><b>${esc(a.title)}</b><br><span class="small muted">${whenLabel(a.at)}</span></span></div>`).join('')}
+      <p class="small muted" style="margin:6px 0 0">Configure em Ajustes → Alertas do ponto.</p></div>` : ''}
+    ${state.reminders.length ? `<button class="btn block ghost" data-act="icsAll" style="margin-top:6px">${icon('calendar')} Exportar lembretes para a agenda</button>` : ''}`;
+}
+
+const QUICK_REMINDERS = [
+  { title: 'Enviar relatório mensal', time: '09:00', rule: { type: 'monthBusinessDay', nth: 1 } },
+  { title: 'Beber água', time: '09:00', style: 'notify', businessOnly: true, rule: { type: 'hourly', from: '09:00', to: '17:00', everyMin: 60, days: [1, 2, 3, 4, 5] } },
+  { title: 'Reunião de equipe', time: '09:00', advance: 10, rule: { type: 'week', days: [1] } },
+  { title: 'Pagar contas', time: '10:00', rule: { type: 'monthDay', day: 5, adjust: 'before' } },
+  { title: 'Alongar e descansar a vista', time: '10:00', style: 'notify', rule: { type: 'hourly', from: '10:00', to: '17:00', everyMin: 120, days: [1, 2, 3, 4, 5] } },
+];
+
+ACTIONS.newReminder = () => openReminderEditor();
+ACTIONS.quickReminder = (i) => {
+  const q = QUICK_REMINDERS[Number(i)];
+  const base = newReminder();
+  openReminderEditor({ ...base, ...q, rule: { ...base.rule, ...q.rule } }, true);
+};
+ACTIONS.editReminder = (id) => openReminderEditor(state.reminders.find((r) => r.id === id));
+ACTIONS.toggleReminder = async (id, el) => {
+  const r = state.reminders.find((x) => x.id === id);
+  if (!r) return;
+  await saveReminder({ ...r, active: el.checked });
+  render();
+  toast(el.checked ? 'Lembrete ativado' : 'Lembrete pausado');
+};
+ACTIONS.permit = (kind) => {
+  if (kind === 'notifications') nativeRequestNotifications(); else nativeOpenSettings(kind);
+  setTimeout(() => { if (ui.view === 'reminders') render(); }, 1500);
+};
+ACTIONS.webNotif = async () => {
+  try { await Notification.requestPermission(); } catch { /* opcional */ }
+  render();
+};
+ACTIONS.icsAll = () => {
+  const list = state.reminders.filter((r) => r.active);
+  if (!list.length) return toast('Nenhum lembrete ativo');
+  openCalendarFile('smartponto-lembretes.ics', toICS(list, Date.now(), reminderCtx()));
+};
+
+/** Campos que mudam conforme o tipo de repetição. */
+function ruleFieldsHTML(d) {
+  const r = d.rule;
+  const sel = (name, opts, val) => `<select class="input" data-r="${name}">${opts.map(([v, l]) => `<option value="${v}" ${String(v) === String(val) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const dayPicker = (days) => `<div class="day-picker">${[1, 2, 3, 4, 5, 6, 0].map((wd) => `<button type="button" class="${(days || []).includes(wd) ? 'on' : ''}" data-wd="${wd}">${WEEKDAYS[wd].slice(0, 3)}</button>`).join('')}</div>`;
+  const time = `<label class="field"><span>Horário</span><input class="input" type="time" data-f="time" value="${esc(d.time)}"></label>`;
+  const bizOpt = `<label class="switch"><span><b>Só em dias úteis</b><br><span class="small muted">Pula fins de semana e feriados nacionais</span></span><input type="checkbox" data-f="businessOnly" ${d.businessOnly ? 'checked' : ''}></label>`;
+  switch (r.type) {
+    case 'once':
+      return `<div class="grid-2"><label class="field"><span>Data</span><input class="input" type="date" data-r="date" value="${esc(r.date || today())}"></label>${time}</div>`;
+    case 'daily':
+      return `${time}${bizOpt}`;
+    case 'week':
+      return `<label class="field"><span>Dias</span>${dayPicker(r.days)}</label>${time}${bizOpt}`;
+    case 'hourly':
+      return `<div class="grid-2">
+          <label class="field"><span>Repetir a cada</span>${sel('everyMin', [[15, '15 min'], [20, '20 min'], [30, '30 min'], [45, '45 min'], [60, '1 hora'], [90, '1h30'], [120, '2 horas'], [180, '3 horas'], [240, '4 horas']], r.everyMin)}</label>
+          <span></span>
+          <label class="field"><span>Das</span><input class="input" type="time" data-r="from" value="${esc(r.from)}"></label>
+          <label class="field"><span>Até</span><input class="input" type="time" data-r="to" value="${esc(r.to)}"></label>
+        </div>
+        <label class="field"><span>Dias</span>${dayPicker(r.days)}</label>${bizOpt}`;
+    case 'interval':
+      return `<div class="grid-2">
+          <label class="field"><span>A cada</span><input class="input" type="number" min="1" max="365" inputmode="numeric" data-r="every" value="${r.every || 1}"></label>
+          <label class="field"><span>&nbsp;</span>${sel('unit', [['day', 'dia(s)'], ['week', 'semana(s)'], ['month', 'mês(es)']], r.unit)}</label>
+          <label class="field"><span>Começando em</span><input class="input" type="date" data-r="date" value="${esc(r.date || today())}"></label>
+          ${time}
+        </div>${bizOpt}`;
+    case 'monthDay':
+      return `<div class="grid-2">
+          <label class="field"><span>Dia do mês</span>${sel('day', [...Array.from({ length: 31 }, (_, i) => [i + 1, `Dia ${i + 1}`]), [-1, 'Último dia']], r.day)}</label>
+          ${time}
+        </div>
+        <label class="field"><span>Se cair em fim de semana ou feriado</span>${sel('adjust', [['none', 'Manter a data'], ['before', 'Antecipar para o dia útil anterior'], ['after', 'Adiar para o próximo dia útil']], r.adjust)}</label>`;
+    case 'monthBusinessDay':
+      return `<div class="grid-2">
+          <label class="field"><span>Qual dia útil</span>${sel('nth', NTH_OPTIONS, r.nth)}</label>
+          ${time}
+        </div><p class="small muted" style="margin-top:0">Conta de segunda a sexta, sem feriados nacionais e sem os feriados que você marcar no Histórico.</p>`;
+    case 'monthWeekday':
+      return `<div class="grid-2">
+          <label class="field"><span>Qual</span>${sel('nth', NTH_WD_OPTIONS, r.nth)}</label>
+          <label class="field"><span>Dia da semana</span>${sel('weekday', [1, 2, 3, 4, 5, 6, 0].map((w) => [w, WEEKDAYS[w]]), r.weekday)}</label>
+        </div>${time}`;
+    case 'yearly':
+      return `<div class="grid-2">
+          <label class="field"><span>Dia</span><input class="input" type="number" min="1" max="31" inputmode="numeric" data-r="day" value="${r.day || 1}"></label>
+          <label class="field"><span>Mês</span>${sel('month', MONTHS.map((m, i) => [i + 1, m]), r.month)}</label>
+        </div>${time}`;
+    default: return '';
+  }
+}
+
+function previewHTML(d) {
+  if (!d.rule) return '';
+  const now = Date.now();
+  const occ = occurrences({ ...d, active: true }, now, now + 400 * 24 * HOUR, reminderCtx()).slice(0, 5);
+  return `<div class="preview">
+    <div class="small muted">${icon('repeat')} ${esc(describe(d))}</div>
+    ${occ.length ? `<ul>${occ.map((o) => {
+      const h = holidayName(dayKey(o.eventAt));
+      return `<li>${whenLabel(o.at)}${d.advance ? ` <span class="muted">(evento ${hhmm(o.eventAt)})</span>` : ''}${h ? ` <span class="muted">· ${esc(h)}</span>` : ''}</li>`;
+    }).join('')}</ul>` : '<p class="small neg" style="margin:6px 0 0">Nenhuma data futura com essas regras.</p>'}
+  </div>`;
+}
+
+function openReminderEditor(existing, isTemplate = false) {
+  const base = newReminder();
+  const d = existing ? JSON.parse(JSON.stringify({ ...base, ...existing, rule: { ...base.rule, ...existing.rule } })) : base;
+  if (!d.rule.date) d.rule.date = today();
+  const editing = existing && !isTemplate;
+  const sheet = openSheet(`
+    <h3>${editing ? 'Editar lembrete' : 'Novo lembrete'}</h3>
+    <label class="field"><span>O que você precisa lembrar?</span><input class="input" data-f="title" maxlength="80" placeholder="Ex.: Enviar relatório de vendas" value="${esc(d.title)}"></label>
+    <label class="field"><span>Detalhes (opcional)</span><textarea class="input" data-f="notes" maxlength="400" rows="2" placeholder="Anotações, link, telefone…">${esc(d.notes)}</textarea></label>
+
+    <label class="field"><span>Tipo de aviso</span>
+      <div class="seg" style="margin:0">
+        <button type="button" data-style="alarm" class="${d.style === 'alarm' ? 'active' : ''}">${icon('alarm')} Alarme</button>
+        <button type="button" data-style="notify" class="${d.style !== 'alarm' ? 'active' : ''}">${icon('bell')} Notificação</button>
+      </div>
+    </label>
+    <p class="small muted" style="margin:-4px 0 12px" data-style-hint></p>
+
+    <label class="field"><span>Repetição</span>
+      <select class="input" data-rtype>${Object.entries(RULE_TYPES).map(([k, v]) => `<option value="${k}" ${k === d.rule.type ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select>
+    </label>
+    <div data-rule-fields>${ruleFieldsHTML(d)}</div>
+
+    <details class="more" ${d.advance || d.until || d.jornadaOnly ? 'open' : ''}>
+      <summary>Mais opções</summary>
+      <label class="field"><span>Avisar</span><select class="input" data-f="advance">${ADVANCE_OPTIONS.map(([v, l]) => `<option value="${v}" ${v === d.advance ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label class="switch"><span><b>Só nos dias da minha jornada</b><br><span class="small muted">Não avisa em folgas, férias e dias sem expediente</span></span><input type="checkbox" data-f="jornadaOnly" ${d.jornadaOnly ? 'checked' : ''}></label>
+      <label class="field" style="margin-top:12px"><span>Repetir até (opcional)</span><input class="input" type="date" data-f="until" value="${esc(d.until)}"></label>
+    </details>
+
+    <div data-preview>${previewHTML(d)}</div>
+
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn" data-test>${icon('alarm')} Testar</button>
+      <button class="btn" data-ics>${icon('calendar')} Agenda</button>
+    </div>
+    <div class="btn-row" style="margin-top:10px">
+      ${editing ? `<button class="btn danger" data-del>${icon('trash')} Excluir</button>` : '<button class="btn" data-close>Cancelar</button>'}
+      <button class="btn primary" data-save>${icon('check')} Salvar</button>
+    </div>`, (s) => {
+    const styleHint = () => {
+      $('[data-style-hint]', s).textContent = d.style === 'alarm'
+        ? 'Toca som contínuo e abre em tela cheia, inclusive com o celular bloqueado, até você concluir ou adiar.'
+        : 'Notificação com som, visível na tela bloqueada.';
+    };
+    const refresh = () => { $('[data-preview]', s).innerHTML = previewHTML(d); };
+    const bindRule = () => {
+      $$('[data-r]', s).forEach((el) => el.addEventListener(el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', () => {
+        const numeric = ['every', 'everyMin', 'day', 'nth', 'weekday', 'month'].includes(el.dataset.r);
+        d.rule[el.dataset.r] = numeric ? Number(el.value) : el.value;
+        refresh();
+      }));
+      $$('[data-wd]', s).forEach((b) => b.addEventListener('click', () => {
+        const wd = Number(b.dataset.wd);
+        const days = new Set(d.rule.days || []);
+        if (days.has(wd)) days.delete(wd); else days.add(wd);
+        d.rule.days = [...days].sort();
+        b.classList.toggle('on');
+        refresh();
+      }));
+      bindFields($('[data-rule-fields]', s));
+    };
+    const bindFields = (root) => {
+      $$('[data-f]', root).forEach((el) => {
+        if (el.dataset.bound) return;
+        el.dataset.bound = '1';
+        el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' || el.type === 'date' ? 'change' : 'input', () => {
+          const k = el.dataset.f;
+          d[k] = el.type === 'checkbox' ? el.checked : k === 'advance' ? Number(el.value) : el.value;
+          refresh();
+        });
+      });
+    };
+    bindFields(s);
+    bindRule();
+    styleHint();
+    $$('[data-style]', s).forEach((b) => b.addEventListener('click', () => {
+      d.style = b.dataset.style;
+      $$('[data-style]', s).forEach((x) => x.classList.toggle('active', x === b));
+      styleHint();
+    }));
+    $('[data-rtype]', s).addEventListener('change', (e) => {
+      d.rule.type = e.target.value;
+      if (d.rule.type === 'week' && !d.rule.days?.length) d.rule.days = [1, 2, 3, 4, 5];
+      $('[data-rule-fields]', s).innerHTML = ruleFieldsHTML(d);
+      bindRule();
+      refresh();
+    });
+    const valid = () => {
+      if (!d.title.trim()) { toast('Escreva o que você quer lembrar'); $('[data-f=title]', s).focus(); return false; }
+      if (['week', 'hourly'].includes(d.rule.type) && !d.rule.days?.length) { toast('Escolha pelo menos um dia'); return false; }
+      return true;
+    };
+    $('[data-save]', s).addEventListener('click', async () => {
+      if (!valid()) return;
+      if (d.rule.type === 'once' && !d.rule.date) d.rule.date = today();
+      d.title = d.title.trim();
+      if (!editing) d.id = '';
+      await saveReminder(d);
+      closeSheet();
+      // Primeiro lembrete no Android: pede a permissão de notificação.
+      if (isAndroidApp && nativeAlarmStatus()?.notifications === false) nativeRequestNotifications();
+      if (ui.view !== 'reminders') go('reminders'); else render();
+      const next = nextOccurrence(d, Date.now(), reminderCtx());
+      toast(next ? `Salvo · próximo: ${whenLabel(next.at)}` : 'Lembrete salvo');
+    });
+    $('[data-test]', s).addEventListener('click', () => {
+      const title = d.title.trim() || 'Teste de lembrete';
+      if (isAndroidApp) {
+        nativeTestAlarm(d.style, title, d.notes || 'Este é um teste. O aviso real toca no horário programado.');
+        toast('O teste toca em 5 segundos. Pode bloquear a tela.');
+      } else {
+        showAlarm({ id: `teste:${Date.now()}`, at: Date.now(), title, body: d.notes || 'Este é um teste do alarme.', style: d.style });
+      }
+    });
+    $('[data-ics]', s).addEventListener('click', () => {
+      if (!valid()) return;
+      openCalendarFile(`lembrete-${d.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'smartponto'}.ics`,
+        toICS([{ ...d, id: d.id || `novo-${Date.now()}`, active: true }], Date.now(), reminderCtx()));
+    });
+    $('[data-del]', s)?.addEventListener('click', async () => {
+      const ok = await confirmSheet({ title: `Excluir “${d.title}”?`, text: 'O lembrete e todos os avisos futuros serão removidos.', ok: 'Excluir', danger: true });
+      if (!ok) return;
+      await deleteReminder(d.id);
+      render();
+      toast('Lembrete excluído');
+    });
+  });
+  if (!editing) setTimeout(() => $('[data-f=title]', sheet)?.focus(), 50);
+}
+
+// ---------- Alarme na tela (navegador / iPhone) ----------
+let alarmEl = null;
+const alarmQueue = [];
+function showAlarm(a) {
+  if (alarmEl) { alarmQueue.push(a); return; }
+  webNotify(a);
+  alarmEl = document.createElement('div');
+  alarmEl.className = `alarm-screen ${a.style === 'alarm' ? '' : 'soft'}`;
+  const now = new Date();
+  alarmEl.innerHTML = `
+    <div class="alarm-glow"></div>
+    <div class="alarm-body">
+      <div class="alarm-ring">${icon(a.style === 'alarm' ? 'alarm' : 'bell')}</div>
+      <div class="alarm-time">${pad(now.getHours())}:${pad(now.getMinutes())}</div>
+      <div class="alarm-title">${esc(a.title)}</div>
+      <div class="alarm-text">${esc(a.body || '')}</div>
+    </div>
+    <div class="alarm-actions">
+      <button class="alarm-done" data-done>${icon('check')} Concluir</button>
+      <div class="alarm-snooze">
+        ${[5, 10, 30].map((m) => `<button data-snooze="${m}">Adiar ${m} min</button>`).join('')}
+      </div>
+    </div>`;
+  document.body.appendChild(alarmEl);
+  if (a.style === 'alarm') startChime(); else { startChime(); setTimeout(stopChime, 2500); }
+  const close = () => {
+    stopChime();
+    alarmEl?.remove();
+    alarmEl = null;
+    if (alarmQueue.length) showAlarm(alarmQueue.shift());
+  };
+  $('[data-done]', alarmEl).addEventListener('click', close);
+  $$('[data-snooze]', alarmEl).forEach((b) => b.addEventListener('click', () => {
+    snoozeWeb(a, Number(b.dataset.snooze));
+    toast(`Adiado por ${b.dataset.snooze} min`);
+    close();
+  }));
+}
+
 // ---------- Primeiro acesso ----------
 function onboarding() {
   openSheet(`
@@ -1058,9 +1522,16 @@ function applyTheme() {
 // ---------- Inicialização ----------
 // Botão voltar do Android: fecha painel, depois volta para a tela de ponto.
 window.spBack = () => {
+  if (alarmEl) { $('[data-done]', alarmEl)?.click(); return true; }
   if (sheetEl) { closeSheet(); return true; }
   if (ui.view !== 'home') { go('home'); return true; }
   return false;
+};
+
+// O Android chama ao voltar para o app (ex.: depois de liberar permissões).
+window.spResume = () => {
+  syncAlarms();
+  if (!sheetEl && !alarmEl && ['reminders', 'home'].includes(ui.view)) render();
 };
 
 async function init() {
@@ -1087,6 +1558,9 @@ async function init() {
 
   setInterval(tick, 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !sheetEl) render(); });
+  startWebAlarms(showAlarm);
+  // Recalcula avisos a cada 15 min (virada do dia, alertas do ponto).
+  setInterval(syncAlarms, 15 * MIN);
 
   if ('serviceWorker' in navigator && !isAndroidApp && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => {});

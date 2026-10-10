@@ -10,6 +10,7 @@ export const state = {
   punches: [],
   settings: { ...DEFAULT_SETTINGS },
   dayInfo: {},
+  reminders: [],
   meta: { lastBackup: null, createdAt: null },
 };
 
@@ -42,12 +43,14 @@ export async function openStore() {
     r.onerror = () => reject(r.error);
   });
   const { t } = tx(['punches', 'kv']);
-  const [punches, settings, dayInfo, meta] = await Promise.all([
+  const [punches, settings, dayInfo, meta, reminders] = await Promise.all([
     req(t.objectStore('punches').getAll()),
     req(t.objectStore('kv').get('settings')),
     req(t.objectStore('kv').get('dayInfo')),
     req(t.objectStore('kv').get('meta')),
+    req(t.objectStore('kv').get('reminders')),
   ]);
+  state.reminders = reminders || [];
   state.punches = punches.sort((a, b) => a.ts - b.ts);
   state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
   state.dayInfo = dayInfo || {};
@@ -104,6 +107,19 @@ export async function setDayInfo(key, info) {
   await putKV('dayInfo', state.dayInfo);
 }
 
+export async function saveReminder(rem) {
+  const r = { ...rem, id: rem.id || newId(), updatedAt: Date.now() };
+  const i = state.reminders.findIndex((x) => x.id === r.id);
+  if (i >= 0) state.reminders[i] = r; else state.reminders.push(r);
+  await putKV('reminders', state.reminders);
+  return r;
+}
+
+export async function deleteReminder(id) {
+  state.reminders = state.reminders.filter((x) => x.id !== id);
+  await putKV('reminders', state.reminders);
+}
+
 export async function markBackup() {
   state.meta.lastBackup = Date.now();
   await putKV('meta', state.meta);
@@ -116,6 +132,7 @@ export function exportBackup() {
     exportedAt: new Date().toISOString(),
     settings: state.settings,
     dayInfo: state.dayInfo,
+    reminders: state.reminders,
     punches: state.punches,
   };
 }
@@ -136,7 +153,17 @@ export async function importBackup(data, mode = 'merge') {
   const dayInfo = mode === 'replace' ? (data.dayInfo || {}) : { ...(data.dayInfo || {}), ...state.dayInfo };
   t.objectStore('kv').put(settings, 'settings');
   t.objectStore('kv').put(dayInfo, 'dayInfo');
+  const incoming = Array.isArray(data.reminders) ? data.reminders.filter((r) => r && typeof r.id === 'string' && r.rule) : [];
+  let reminders = state.reminders;
+  if (mode === 'replace') reminders = incoming;
+  else {
+    const byId = new Map(incoming.map((r) => [r.id, r]));
+    state.reminders.forEach((r) => byId.set(r.id, r));
+    reminders = [...byId.values()];
+  }
+  t.objectStore('kv').put(reminders, 'reminders');
   await done;
+  state.reminders = reminders;
 
   if (mode === 'replace') state.punches = valid;
   else {
@@ -158,6 +185,7 @@ export async function wipeAll() {
   state.punches = [];
   state.settings = { ...DEFAULT_SETTINGS };
   state.dayInfo = {};
+  state.reminders = [];
   state.meta = { lastBackup: null, createdAt: Date.now() };
   await putKV('meta', state.meta);
 }

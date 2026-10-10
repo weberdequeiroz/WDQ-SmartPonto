@@ -5,4 +5,7 @@
         <item name="android:colorPrimary">@color/brand</item>
         <item name="android:colorAccent">#4F46E5</item>
     </style>
+    <style name="Theme.SmartPonto.Alarm" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/brand</item>
+    </style>
 </resources>

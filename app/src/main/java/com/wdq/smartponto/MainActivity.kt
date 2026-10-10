@@ -11,6 +11,9 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.PowerManager
+import android.provider.Settings
+import android.app.NotificationManager
 import android.print.PrintAttributes
 import android.print.PrintManager
 import android.provider.MediaStore
@@ -53,6 +56,9 @@ class MainActivity : ComponentActivity() {
         fileCallback?.onReceiveValue(uri?.let { arrayOf(it) })
         fileCallback = null
     }
+
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { notifyJs() }
 
     private val locationPermission =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -148,6 +154,17 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Volta de uma tela de permissões: o app web atualiza os avisos e o estado das permissões.
+        if (::web.isInitialized) notifyJs()
+        AlarmScheduler.scheduleNext(this)
+    }
+
+    private fun notifyJs() {
+        web.evaluateJavascript("window.spResume && window.spResume()", null)
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         web.saveState(outState)
@@ -156,6 +173,79 @@ class MainActivity : ComponentActivity() {
     private fun safeName(name: String) = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
 
     inner class Bridge {
+        /** Lista de avisos calculada pelo app web (JSON). */
+        @JavascriptInterface
+        fun setAlarms(json: String) {
+            AlarmScheduler.setAll(this@MainActivity, json)
+        }
+
+        @JavascriptInterface
+        fun alarmStatus(): String {
+            val nm = getSystemService(NotificationManager::class.java)
+            val fullScreen = Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent()
+            val battery = getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+            return org.json.JSONObject()
+                .put("notifications", nm.areNotificationsEnabled())
+                .put("exact", AlarmScheduler.canExact(this@MainActivity))
+                .put("fullScreen", fullScreen)
+                .put("battery", battery)
+                .toString()
+        }
+
+        @JavascriptInterface
+        fun requestNotifications() {
+            runOnUiThread {
+                if (Build.VERSION.SDK_INT >= 33 &&
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                } else {
+                    openSettings("notifications")
+                }
+            }
+        }
+
+        @SuppressLint("BatteryLife")
+        @JavascriptInterface
+        fun openSettings(kind: String) {
+            val pkg = Uri.parse("package:$packageName")
+            val intent = when (kind) {
+                "exact" -> if (Build.VERSION.SDK_INT >= 31) Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg) else null
+                "fullscreen" -> if (Build.VERSION.SDK_INT >= 34) Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg) else null
+                "battery" -> Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, pkg)
+                else -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            } ?: return
+            runOnUiThread {
+                try {
+                    startActivity(intent)
+                } catch (_: ActivityNotFoundException) {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun testAlarm(style: String, title: String, body: String) {
+            AlarmScheduler.test(this@MainActivity, style, title, body)
+        }
+
+        /** Abre um .ics na agenda do celular. */
+        @JavascriptInterface
+        fun openCalendar(name: String, content: String) {
+            val dir = File(cacheDir, "share").apply { mkdirs() }
+            val file = File(dir, safeName(name)).apply { writeText(content) }
+            val uri = FileProvider.getUriForFile(this@MainActivity, "$packageName.files", file)
+            val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "text/calendar")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            runOnUiThread {
+                try {
+                    startActivity(view)
+                } catch (_: ActivityNotFoundException) {
+                    shareFile(name, "text/calendar", content)
+                }
+            }
+        }
+
         /** Grava o arquivo no cache e abre o menu de compartilhamento (Drive, WhatsApp, e-mail…). */
         @JavascriptInterface
         fun shareFile(name: String, mime: String, content: String) {

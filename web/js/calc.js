@@ -11,7 +11,26 @@ export const PUNCH_TYPES = {
   out: { label: 'Saída', short: 'Saída' },
 };
 
-export const BREAK_REASONS = ['Refeição', 'Café', 'Pessoal', 'Médico', 'Outro'];
+// Motivos de pausa. paid = o tempo conta como trabalho (pausas concedidas pela empresa, serviço externo, curso).
+export const BREAK_REASONS = [
+  { label: 'Refeição', hint: 'Almoço, jantar ou lanche', paid: false, icon: 'meal' },
+  { label: 'Café', hint: 'Pausa curta para café ou lanche', paid: true, icon: 'break_start' },
+  { label: 'Descanso', hint: 'Pausa de descanso (NR-17)', paid: true, icon: 'pause' },
+  { label: 'A serviço', hint: 'Banco, cliente, entrega, cartório', paid: true, icon: 'car' },
+  { label: 'Treinamento', hint: 'Curso, palestra ou reunião externa', paid: true, icon: 'book' },
+  { label: 'Médico', hint: 'Consulta ou exame', paid: false, icon: 'health' },
+  { label: 'Pessoal', hint: 'Assunto particular', paid: false, icon: 'user' },
+  { label: 'Outro', hint: 'Qualquer outro motivo', paid: false, icon: 'more' },
+];
+export const isPaidBreak = (reason) => !!BREAK_REASONS.find((r) => r.label === reason)?.paid;
+
+// Modalidade de trabalho registrada na entrada.
+export const WORK_MODES = {
+  presencial: 'Presencial',
+  remoto: 'Home office',
+  externo: 'Externo / cliente',
+  viagem: 'Viagem',
+};
 
 export const OCCURRENCES = {
   folga: { label: 'Folga', paid: true },
@@ -93,7 +112,7 @@ export function minutesToHHMM(min) {
 export function buildDays(punches, now = Date.now()) {
   const days = new Map();
   const get = (k) => {
-    if (!days.has(k)) days.set(k, { punches: [], work: 0, breaks: 0, open: false, issues: [] });
+    if (!days.has(k)) days.set(k, { punches: [], work: 0, breaks: 0, paidBreaks: 0, open: false, issues: [] });
     return days.get(k);
   };
   const sorted = [...punches].sort((a, b) => a.ts - b.ts);
@@ -102,10 +121,17 @@ export function buildDays(punches, now = Date.now()) {
   let shiftDay = null;
   let shiftStart = 0;
   let segStart = 0;
+  let breakPaid = false;
+  let lastOut = null;
 
   const closeForgotten = () => {
     get(shiftDay).issues.push('Saída não registrada');
     state = 'off';
+    lastOut = null;
+  };
+  // Tempo de pausa: a remunerada soma ao trabalhado.
+  const addBreak = (rec, ms) => {
+    if (breakPaid) { rec.work += ms; rec.paidBreaks += ms; } else rec.breaks += ms;
   };
 
   for (const p of sorted) {
@@ -121,18 +147,23 @@ export function buildDays(punches, now = Date.now()) {
 
     if (type === 'in') {
       if (state === 'working') { rec.issues.push(`Entrada repetida às ${hhmm(p.ts)}`); continue; }
+      if (lastOut !== null && p.ts - lastOut < 11 * HOUR) {
+        rec.issues.push(`Descanso entre jornadas de ${fmtDur(p.ts - lastOut)} (mínimo 11h)`);
+      }
       state = 'working'; shiftDay = day; shiftStart = p.ts; segStart = p.ts;
+      rec.mode = p.mode || rec.mode;
     } else if (type === 'break_start') {
       if (state !== 'working') { rec.issues.push(`Intervalo sem entrada às ${hhmm(p.ts)}`); continue; }
-      rec.work += p.ts - segStart; state = 'break'; segStart = p.ts;
+      rec.work += p.ts - segStart; state = 'break'; segStart = p.ts; breakPaid = isPaidBreak(p.reason);
     } else if (type === 'break_end') {
       if (state !== 'break') { rec.issues.push(`Retorno sem intervalo às ${hhmm(p.ts)}`); continue; }
-      rec.breaks += p.ts - segStart; state = 'working'; segStart = p.ts;
+      addBreak(rec, p.ts - segStart); state = 'working'; segStart = p.ts;
     } else if (type === 'out') {
       if (state === 'off') { rec.issues.push(`Saída sem entrada às ${hhmm(p.ts)}`); continue; }
       if (state === 'working') rec.work += p.ts - segStart;
-      else rec.breaks += p.ts - segStart;
+      else addBreak(rec, p.ts - segStart);
       state = 'off';
+      lastOut = p.ts;
     }
   }
 
@@ -144,7 +175,8 @@ export function buildDays(punches, now = Date.now()) {
       rec.state = state;
       rec.segStart = segStart;
       if (state === 'working') rec.work += Math.max(0, now - segStart);
-      else rec.breaks += Math.max(0, now - segStart);
+      else addBreak(rec, Math.max(0, now - segStart));
+      rec.breakPaid = state === 'break' && breakPaid;
     }
   }
   return days;
@@ -198,7 +230,7 @@ export function scheduleSummary(settings) {
  * Dias futuros não geram saldo negativo.
  */
 export function summarizeDay(key, days, settings, dayInfo, todayKey) {
-  const d = days.get(key) || { punches: [], work: 0, breaks: 0, open: false, issues: [] };
+  const d = days.get(key) || { punches: [], work: 0, breaks: 0, paidBreaks: 0, open: false, issues: [] };
   const info = dayInfo?.[key] || {};
   const expected = expectedMinutes(key, settings, dayInfo) * MIN;
   const future = key > todayKey;
@@ -224,6 +256,8 @@ export function summarizeDay(key, days, settings, dayInfo, todayKey) {
     punches: d.punches,
     work: d.work,
     breaks: d.breaks,
+    paidBreaks: d.paidBreaks || 0,
+    mode: d.mode || null,
     expected,
     balance,
     extra: Math.max(0, balance),
@@ -253,9 +287,11 @@ export function buildReport(startKey, endKey, punches, settings, dayInfo, now = 
     if (r.work > 0) t.daysWorked += 1;
     if (r.occurrence === 'falta') t.absences += 1;
     if (r.occurrence && r.occurrence !== 'falta') t.excused += 1;
+    t.paidBreaks += r.paidBreaks;
+    if (r.mode && r.work > 0) t.modes[r.mode] = (t.modes[r.mode] || 0) + 1;
     t.warnings += r.warnings.length;
     return t;
-  }, { work: 0, breaks: 0, expected: 0, balance: 0, extra: 0, debt: 0, daysWorked: 0, absences: 0, excused: 0, warnings: 0 });
+  }, { work: 0, breaks: 0, paidBreaks: 0, modes: {}, expected: 0, balance: 0, extra: 0, debt: 0, daysWorked: 0, absences: 0, excused: 0, warnings: 0 });
   totals.avgPerDay = totals.daysWorked ? totals.work / totals.daysWorked : 0;
   return { start: startKey, end: endKey, rows, totals };
 }
@@ -334,4 +370,17 @@ export const DEFAULT_SETTINGS = {
   geolocation: false,
   theme: 'system',
   backupReminderDays: 7,
+  // Modalidade
+  defaultMode: 'presencial',
+  askMode: false,
+  // Alertas automáticos do ponto (minutos / horários)
+  alertEntry: false,
+  alertEntryTime: '08:00',
+  alertMealEnd: true,
+  mealMinutes: 60,
+  alertNoBreak: true,
+  alertJourneyDone: true,
+  alertForgotOut: true,
+  alertStyle: 'notify',
+  holidays: true,
 };

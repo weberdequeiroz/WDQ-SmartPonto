@@ -80,3 +80,30 @@ export function setThemeColor(color) {
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
   bridge?.setBarColor?.(color);
 }
+
+// ---------- Alarmes nativos (APK) ----------
+export function nativeSetAlarms(list) {
+  bridge?.setAlarms?.(JSON.stringify(list.map(({ id, at, title, body, style }) => ({ id, at, title, body, style }))));
+}
+
+/** { notifications, exact, fullScreen, battery } — true quando está tudo liberado. null fora do APK. */
+export function nativeAlarmStatus() {
+  if (!bridge?.alarmStatus) return null;
+  try { return JSON.parse(bridge.alarmStatus()); } catch { return null; }
+}
+
+export function nativeRequestNotifications() { bridge?.requestNotifications?.(); }
+export function nativeOpenSettings(kind) { bridge?.openSettings?.(kind); }
+export function nativeTestAlarm(style, title, body) { bridge?.testAlarm?.(style, title, body); }
+
+/** Abre um arquivo .ics: no iPhone, o Safari oferece "Adicionar à Agenda"; no Android, abre a agenda. */
+export async function openCalendarFile(name, text) {
+  if (bridge?.openCalendar) { bridge.openCalendar(name, text); return; }
+  if (isIOS) {
+    // Navegar até o arquivo faz o iOS mostrar a prévia com o botão "Adicionar Tudo".
+    const url = `data:text/calendar;charset=utf-8,${encodeURIComponent(text)}`;
+    window.location.href = url;
+    return;
+  }
+  await shareFile(name, 'text/calendar', text);
+}
