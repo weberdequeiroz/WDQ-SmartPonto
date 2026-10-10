@@ -19,7 +19,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.2.0';
+export const VERSION = '1.2.1';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -93,7 +93,7 @@ function render() {
   const v = VIEWS[ui.view];
   $('#page-title').textContent = v.title;
   $$('.tabbar button').forEach((b) => b.classList.toggle('active', b.dataset.view === ui.view));
-  $('#view').innerHTML = v.render();
+  $('#view').innerHTML = `${v.render()}<footer class="credit">Desenvolvido por Weber de Queiroz</footer>`;
   v.mount?.();
   bindView();
   syncAlarms();

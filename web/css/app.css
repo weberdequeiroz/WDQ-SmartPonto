@@ -371,6 +371,11 @@ details.more[open] summary { margin-bottom: 10px; }
 .alarm-snooze { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .alarm-snooze button { min-height: 48px; border-radius: 99px; border: 1px solid rgba(255, 255, 255, .3); background: rgba(255, 255, 255, .08); color: #fff; font-weight: 600; font-size: 14px; }
 
+.credit {
+  margin: 22px 0 4px; text-align: center; color: var(--muted); opacity: .6;
+  font-size: 10px; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase;
+}
+
 /* ---------- Painéis (sheets) ---------- */
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 50; background: rgba(8, 8, 20, .5);
