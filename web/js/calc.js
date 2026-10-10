@@ -166,8 +166,31 @@ export function currentState(punches, now = Date.now()) {
 export function expectedMinutes(key, settings, dayInfo) {
   const info = dayInfo?.[key];
   if (info?.occurrence && OCCURRENCES[info.occurrence]?.paid) return 0;
-  const wd = parseDay(key).getDay();
-  return settings.schedule?.[wd] ?? 0;
+  return plannedMinutes(key, settings);
+}
+
+/** Jornada da escala para o dia, sem considerar ocorrências. */
+export function plannedMinutes(key, settings) {
+  const cycle = settings.cycle;
+  if (settings.scheduleMode === 'cycle' && cycle?.days?.length && cycle.start) {
+    // Escala de revezamento (12x36, 6x1…): repete a sequência de dias a partir da data inicial.
+    const n = cycle.days.length;
+    const diff = Math.round((parseDay(key) - parseDay(cycle.start)) / (24 * HOUR));
+    return cycle.days[((diff % n) + n) % n] ?? 0;
+  }
+  return settings.schedule?.[parseDay(key).getDay()] ?? 0;
+}
+
+/** Texto curto da jornada configurada: "44h semanais" ou "Escala 12x36". */
+export function scheduleSummary(settings) {
+  if (settings.scheduleMode === 'cycle' && settings.cycle?.days?.length) {
+    const days = settings.cycle.days;
+    const work = days.filter((m) => m > 0).length;
+    const total = days.reduce((a, b) => a + b, 0);
+    const avgWeek = (total / days.length) * 7;
+    return `Escala de ${days.length} dias (${work} de trabalho) · média de ${fmtDur(avgWeek * MIN)} por semana`;
+  }
+  return `${fmtDur((settings.schedule || []).reduce((a, b) => a + b, 0) * MIN)} semanais`;
 }
 
 /**
@@ -299,6 +322,11 @@ export const DEFAULT_SETTINGS = {
   employeeId: '',
   // Minutos previstos por dia da semana (domingo = 0). Padrão: 8h de segunda a sexta (40h semanais).
   schedule: [0, 480, 480, 480, 480, 480, 0],
+  // 'weekly' usa schedule; 'cycle' usa uma escala que se repete a partir de cycle.start.
+  scheduleMode: 'weekly',
+  cycle: { start: '', days: [] },
+  // Modelos de jornada criados pelo usuário: { name, mode, schedule, cycle }.
+  customPresets: [],
   tolerance: 10,
   bankStart: '',
   bankInitial: 0,

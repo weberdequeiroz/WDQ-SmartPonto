@@ -2,7 +2,7 @@ import {
   PUNCH_TYPES, BREAK_REASONS, OCCURRENCES, WEEKDAYS, MONTHS, MIN, HOUR,
   buildDays, buildReport, summarizeDay, currentState, hourBank, allowedActions, suggestedNext,
   dayKey, parseDay, addDays, hhmm, fmtDur, fmtClock, fmtDay, fmtDayLong, parseHHMM, minutesToHHMM,
-  weekRange, monthRange, yearRange,
+  weekRange, monthRange, yearRange, plannedMinutes, scheduleSummary,
 } from './calc.js';
 import {
   state, openStore, addPunch, updatePunch, deletePunch, saveSettings, setDayInfo,
@@ -12,7 +12,7 @@ import {
   isAndroidApp, isIOS, isStandalone, shareFile, saveFile, printPage, shareText, vibrate, getLocation, setThemeColor,
 } from './platform.js';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.1.0';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -665,7 +665,7 @@ ACTIONS.repPdf = () => {
       <div><b>Empresa</b>${esc(s.company || '—')}</div>
       <div><b>Cargo / matrícula</b>${esc([s.role, s.employeeId].filter(Boolean).join(' · ') || '—')}</div>
       <div><b>Período</b>${fmtDay(range[0], { weekday: false })} a ${fmtDay(range[1], { weekday: false })}</div>
-      <div><b>Jornada semanal</b>${fmtDur(s.schedule.reduce((a, b) => a + b, 0) * MIN)}</div>
+      <div><b>Jornada</b>${esc(scheduleSummary(s))}</div>
       <div><b>Emitido em</b>${fmtDay(today(), { weekday: false })} ${hhmm(Date.now())}</div>
     </div>
     <div class="p-kpis">
@@ -692,16 +692,97 @@ ACTIONS.repPdf = () => {
 
 // ---------- Tela: Ajustes ----------
 const PRESETS = [
-  { label: '40h · 8h seg–sex', schedule: [0, 480, 480, 480, 480, 480, 0] },
-  { label: '44h · 8h48 seg–sex', schedule: [0, 528, 528, 528, 528, 528, 0] },
-  { label: '44h · 8h seg–sex + 4h sáb', schedule: [0, 480, 480, 480, 480, 480, 240] },
-  { label: '36h · 6h seg–sáb', schedule: [0, 360, 360, 360, 360, 360, 360] },
-  { label: '30h · 6h seg–sex', schedule: [0, 360, 360, 360, 360, 360, 0] },
+  { name: '40h · 8h seg–sex', mode: 'weekly', schedule: [0, 480, 480, 480, 480, 480, 0] },
+  { name: '44h · 8h48 seg–sex', mode: 'weekly', schedule: [0, 528, 528, 528, 528, 528, 0] },
+  { name: '44h · 8h seg–sex + 4h sáb', mode: 'weekly', schedule: [0, 480, 480, 480, 480, 480, 240] },
+  { name: '36h · 6h seg–sáb', mode: 'weekly', schedule: [0, 360, 360, 360, 360, 360, 360] },
+  { name: '30h · 6h seg–sex', mode: 'weekly', schedule: [0, 360, 360, 360, 360, 360, 0] },
+  { name: 'Escala 12x36', mode: 'cycle', days: [720, 0] },
+  { name: 'Escala 24x48', mode: 'cycle', days: [1440, 0, 0] },
+  { name: 'Escala 6x1 · 7h20', mode: 'cycle', days: [440, 440, 440, 440, 440, 440, 0] },
+  { name: 'Escala 5x1 · 8h', mode: 'cycle', days: [480, 480, 480, 480, 480, 0] },
+  { name: 'Escala 4x2 · 8h', mode: 'cycle', days: [480, 480, 480, 480, 0, 0] },
 ];
+
+/** Aceita "8", "8:00", "08:30", "0830", "8h", "8h30". Devolve minutos (0 a 24h) ou null. */
+function parseDur(str) {
+  const t = String(str ?? '').trim().toLowerCase().replace(/\s/g, '');
+  if (!t) return 0;
+  let m = null;
+  if (/^\d{1,2}h?$/.test(t)) m = Number(t.replace('h', '')) * 60;
+  else m = parseHHMM(t.replace('h', ':').replace(/:$/, ''));
+  if (m === null || m > 1440 || /[:h](\d{2})$/.test(t) && Number(t.slice(-2)) > 59) return null;
+  return m;
+}
+
+/** Modelos disponíveis: prontos ("b:i") e criados pelo usuário ("c:i"). */
+function presetOptions(selected = '') {
+  const custom = state.settings.customPresets || [];
+  const opt = (v, label) => `<option value="${v}" ${v === selected ? 'selected' : ''}>${esc(label)}</option>`;
+  return `<optgroup label="Semanais">${PRESETS.map((p, i) => p.mode === 'weekly' ? opt(`b:${i}`, p.name) : '').join('')}</optgroup>
+    <optgroup label="Escalas de revezamento">${PRESETS.map((p, i) => p.mode === 'cycle' ? opt(`b:${i}`, p.name) : '').join('')}</optgroup>
+    ${custom.length ? `<optgroup label="Meus modelos">${custom.map((p, i) => opt(`c:${i}`, p.name)).join('')}</optgroup>` : ''}`;
+}
+
+function presetByValue(v) {
+  const [kind, i] = String(v).split(':');
+  return kind === 'b' ? PRESETS[Number(i)] : kind === 'c' ? state.settings.customPresets?.[Number(i)] : null;
+}
+
+function presetChanges(p) {
+  if (p.mode === 'cycle') {
+    const days = [...(p.days || p.cycle?.days || [])];
+    return { scheduleMode: 'cycle', cycle: { start: p.cycle?.start || state.settings.cycle?.start || today(), days } };
+  }
+  return { scheduleMode: 'weekly', schedule: [...p.schedule] };
+}
+
+function durInput(attr, minutes) {
+  return `<input class="input dur" type="text" inputmode="numeric" autocomplete="off" placeholder="00:00" ${attr} value="${minutesToHHMM(minutes)}">`;
+}
+
+function jornadaHTML(s) {
+  const mode = s.scheduleMode === 'cycle' ? 'cycle' : 'weekly';
+  const cycle = s.cycle?.days?.length ? s.cycle : { start: s.cycle?.start || today(), days: [480, 480, 480, 480, 480, 0, 0] };
+  let body;
+  if (mode === 'weekly') {
+    body = `
+      <div class="sched">
+        ${[1, 2, 3, 4, 5, 6, 0].map((wd) => `<label><span>${WEEKDAYS[wd]}</span>${durInput(`data-sched="${wd}"`, s.schedule[wd])}</label>`).join('')}
+      </div>
+      <p class="small muted" style="margin:10px 0 0">Digite as horas de cada dia (ex.: 8, 8:48, 9h30). Use 0 para folga.</p>`;
+  } else {
+    const diff = Math.round((parseDay(today()) - parseDay(cycle.start)) / (24 * HOUR));
+    const pos = ((diff % cycle.days.length) + cycle.days.length) % cycle.days.length;
+    body = `
+      <label class="field"><span>Primeiro dia da escala</span><input class="input" type="date" data-cycle-start value="${esc(cycle.start)}"></label>
+      <div class="cycle-days">
+        ${cycle.days.map((m, i) => `<div class="cycle-day ${i === pos ? 'now' : ''}">
+          <span>Dia ${i + 1}${i === pos ? ' · hoje' : ''}</span>${durInput(`data-cycle="${i}"`, m)}
+          <button class="link" data-act="cycleDel" data-arg="${i}" aria-label="Remover dia ${i + 1}" ${cycle.days.length < 2 ? 'disabled' : ''}>${icon('trash')}</button>
+        </div>`).join('')}
+      </div>
+      <button class="btn block" data-act="cycleAdd" style="margin-top:8px">${icon('plus')} Adicionar dia à escala</button>
+      <p class="small muted" style="margin:10px 0 0">A sequência se repete a partir do primeiro dia. Ex.: 12x36 = dia 1 com 12:00 e dia 2 com 0. Hoje: ${fmtDur(plannedMinutes(today(), s) * MIN)} previstas.</p>`;
+  }
+  const custom = s.customPresets || [];
+  return `
+    <h2>Jornada de trabalho</h2>
+    <div class="seg">
+      <button data-act="schedMode" data-arg="weekly" class="${mode === 'weekly' ? 'active' : ''}">Por dia da semana</button>
+      <button data-act="schedMode" data-arg="cycle" class="${mode === 'cycle' ? 'active' : ''}">Escala / revezamento</button>
+    </div>
+    <label class="field"><span>Usar um modelo</span>
+      <select class="input" data-act="preset"><option value="">Escolher…</option>${presetOptions()}</select>
+    </label>
+    ${body}
+    <p style="margin:10px 0 0"><b data-sched-summary>${esc(scheduleSummary(s))}</b></p>
+    <button class="btn block" data-act="savePreset" style="margin-top:12px">${icon('plus')} Salvar como meu modelo</button>
+    ${custom.length ? `<div class="chips" style="margin-top:12px">${custom.map((p, i) => `<span class="chip">${esc(p.name)}<button class="link" style="padding:0 0 0 4px" data-act="delPreset" data-arg="${i}" aria-label="Apagar modelo ${esc(p.name)}">✕</button></span>`).join('')}</div>` : ''}`;
+}
 
 function renderSettings() {
   const s = state.settings;
-  const weekly = s.schedule.reduce((a, b) => a + b, 0);
   const lastBackup = state.meta.lastBackup ? `${fmtDay(dayKey(state.meta.lastBackup))} às ${hhmm(state.meta.lastBackup)}` : 'nunca';
   return `
     <section class="card">
@@ -714,16 +795,13 @@ function renderSettings() {
       <label class="field" style="margin:0"><span>Matrícula</span><input class="input" data-set="employeeId" value="${esc(s.employeeId)}" placeholder="Opcional"></label>
     </section>
 
-    <section class="card">
-      <h2>Jornada de trabalho</h2>
-      <label class="field"><span>Modelo rápido</span>
-        <select class="input" data-act="preset"><option value="">Escolher…</option>${PRESETS.map((p, i) => `<option value="${i}">${p.label}</option>`).join('')}</select>
-      </label>
-      <div class="sched">
-        ${[1, 2, 3, 4, 5, 6, 0].map((wd) => `<label><span>${WEEKDAYS[wd]}</span><input class="input" type="time" data-sched="${wd}" value="${minutesToHHMM(s.schedule[wd])}"></label>`).join('')}
-      </div>
-      <p class="small muted" style="margin:10px 0 0">Total semanal: <b data-weekly>${fmtDur(weekly * MIN)}</b>. Use 00:00 para dias de folga.</p>
-      <div class="grid-2" style="margin-top:12px">
+    <section class="card" id="jornada">
+      ${jornadaHTML(s)}
+    </section>
+
+    <section class="card" id="jornada-extra">
+      <h2>Tolerância e lembretes</h2>
+      <div class="grid-2">
         <label class="field"><span>Tolerância diária (min)</span><input class="input" type="number" min="0" max="60" inputmode="numeric" data-set="tolerance" value="${s.tolerance}"></label>
         <label class="field"><span>Lembrete de backup (dias)</span><input class="input" type="number" min="1" max="90" inputmode="numeric" data-set="backupReminderDays" value="${s.backupReminderDays}"></label>
       </div>
@@ -787,21 +865,102 @@ VIEWS.settings.mount = () => {
       if (key === 'theme') applyTheme();
     });
   });
-  $$('[data-sched]').forEach((el) => el.addEventListener('change', async () => {
+  // Campos de duração: valida, normaliza para HH:MM e salva.
+  const onDur = (el, current, save) => el.addEventListener('change', async () => {
+    const m = parseDur(el.value);
+    if (m === null) {
+      toast('Use horas e minutos, ex.: 8:48 (máximo 24:00)');
+      el.value = minutesToHHMM(current());
+      return;
+    }
+    el.value = minutesToHHMM(m);
+    await save(m);
+    $('[data-sched-summary]').textContent = scheduleSummary(state.settings);
+  });
+  $$('[data-sched]').forEach((el) => onDur(el, () => state.settings.schedule[Number(el.dataset.sched)], async (m) => {
     const schedule = [...state.settings.schedule];
-    schedule[Number(el.dataset.sched)] = parseHHMM(el.value || '00:00') ?? 0;
+    schedule[Number(el.dataset.sched)] = m;
     await saveSettings({ schedule });
-    $('[data-weekly]').textContent = fmtDur(schedule.reduce((a, b) => a + b, 0) * MIN);
   }));
+  $$('[data-cycle]').forEach((el) => onDur(el, () => currentCycle().days[Number(el.dataset.cycle)], async (m) => {
+    const days = [...currentCycle().days];
+    days[Number(el.dataset.cycle)] = m;
+    await saveSettings({ cycle: { ...currentCycle(), days } });
+  }));
+  $('[data-cycle-start]')?.addEventListener('change', async (e) => {
+    if (!e.target.value) return;
+    await saveSettings({ cycle: { ...currentCycle(), start: e.target.value } });
+    render();
+  });
   $('#restore-file').addEventListener('change', onRestoreFile);
 };
 
+function currentCycle() {
+  const c = state.settings.cycle;
+  return c?.days?.length ? c : { start: c?.start || today(), days: [480, 480, 480, 480, 480, 0, 0] };
+}
+
 ACTIONS.preset = async (_, el) => {
-  const p = PRESETS[Number(el.value)];
+  const p = presetByValue(el.value);
   if (!p) return;
-  await saveSettings({ schedule: [...p.schedule] });
+  await saveSettings(presetChanges(p));
   render();
-  toast(`Jornada: ${p.label}`);
+  toast(`Jornada: ${p.name}`);
+};
+
+ACTIONS.schedMode = async (mode) => {
+  if (mode === 'cycle') await saveSettings({ scheduleMode: 'cycle', cycle: currentCycle() });
+  else await saveSettings({ scheduleMode: 'weekly' });
+  render();
+};
+
+ACTIONS.cycleAdd = async () => {
+  const c = currentCycle();
+  if (c.days.length >= 60) return toast('Máximo de 60 dias na escala');
+  await saveSettings({ cycle: { ...c, days: [...c.days, 0] } });
+  render();
+};
+
+ACTIONS.cycleDel = async (i) => {
+  const c = currentCycle();
+  if (c.days.length < 2) return;
+  await saveSettings({ cycle: { ...c, days: c.days.filter((_, j) => j !== Number(i)) } });
+  render();
+};
+
+ACTIONS.savePreset = () => {
+  const s = state.settings;
+  openSheet(`
+    <h3>Salvar como meu modelo</h3>
+    <p class="sub">${esc(scheduleSummary(s))}</p>
+    <label class="field"><span>Nome do modelo</span><input class="input" name="pname" maxlength="40" placeholder="Ex.: Plantão loja, Escala verão"></label>
+    <div class="btn-row"><button class="btn" data-close>Cancelar</button><button class="btn primary" data-ok>Salvar</button></div>`, (sh) => {
+    const input = $('[name=pname]', sh);
+    input.focus();
+    $('[data-ok]', sh).addEventListener('click', async () => {
+      const name = input.value.trim();
+      if (!name) return toast('Dê um nome ao modelo');
+      const preset = s.scheduleMode === 'cycle'
+        ? { name, mode: 'cycle', days: [...currentCycle().days] }
+        : { name, mode: 'weekly', schedule: [...s.schedule] };
+      const list = (s.customPresets || []).filter((p) => p.name !== name);
+      await saveSettings({ customPresets: [...list, preset] });
+      closeSheet();
+      render();
+      toast(`Modelo “${name}” salvo`);
+    });
+  });
+};
+
+ACTIONS.delPreset = async (i) => {
+  const list = [...(state.settings.customPresets || [])];
+  const p = list[Number(i)];
+  if (!p) return;
+  const ok = await confirmSheet({ title: `Apagar o modelo “${p.name}”?`, text: 'A jornada atual não muda.', ok: 'Apagar', danger: true });
+  if (!ok) return;
+  list.splice(Number(i), 1);
+  await saveSettings({ customPresets: list });
+  render();
 };
 
 function backupPayload() {
@@ -870,14 +1029,20 @@ function onboarding() {
     <p class="sub" style="text-align:center">Marque entrada, intervalos e saída com um toque e gere relatórios quando precisar.</p>
     <label class="field"><span>Seu nome</span><input class="input" name="name" autocomplete="name" placeholder="Como quer ser chamado"></label>
     <label class="field"><span>Sua jornada</span>
-      <select class="input" name="preset">${PRESETS.map((p, i) => `<option value="${i}">${p.label}</option>`).join('')}</select>
+      <select class="input" name="preset">${presetOptions('b:0')}<option value="custom">Outra: vou montar a minha</option></select>
     </label>
-    <p class="small muted">Você pode ajustar cada dia da semana depois, em Ajustes.</p>
+    <p class="small muted">Dá para ajustar as horas de cada dia ou montar uma escala própria em Ajustes.</p>
     <button class="btn primary block" data-go>Começar</button>`, (s) => {
     $('[data-go]', s).addEventListener('click', async () => {
-      await saveSettings({ name: $('[name=name]', s).value.trim(), schedule: [...PRESETS[Number($('[name=preset]', s).value)].schedule], onboarded: true });
+      const choice = $('[name=preset]', s).value;
+      const p = presetByValue(choice);
+      await saveSettings({ name: $('[name=name]', s).value.trim(), ...(p ? presetChanges(p) : {}), onboarded: true });
       closeSheet();
-      render();
+      if (choice === 'custom') {
+        go('settings');
+        $('#jornada')?.scrollIntoView({ block: 'start' });
+        toast('Defina as horas de cada dia ou crie uma escala');
+      } else render();
     });
   });
 }

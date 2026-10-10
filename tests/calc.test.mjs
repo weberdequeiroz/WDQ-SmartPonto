@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildDays, buildReport, currentState, summarizeDay, hourBank, dayKey, fmtDur, parseHHMM,
-  weekRange, monthRange, DEFAULT_SETTINGS, HOUR, MIN,
+  weekRange, monthRange, expectedMinutes, scheduleSummary, DEFAULT_SETTINGS, HOUR, MIN,
 } from '../web/js/calc.js';
 
 const at = (y, m, d, h, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -95,4 +95,21 @@ test('formatação e intervalos de datas', () => {
   assert.deepEqual(weekRange('2026-10-09'), ['2026-10-04', '2026-10-10']);
   assert.deepEqual(monthRange('2026-02-10'), ['2026-02-01', '2026-02-28']);
   assert.equal(dayKey(at(2026, 1, 2, 23, 59)), '2026-01-02');
+});
+
+test('escala 12x36 repete a partir da data inicial', () => {
+  const s = { ...settings, scheduleMode: 'cycle', cycle: { start: '2026-10-05', days: [720, 0] } };
+  assert.equal(expectedMinutes('2026-10-05', s, {}), 720);
+  assert.equal(expectedMinutes('2026-10-06', s, {}), 0);
+  assert.equal(expectedMinutes('2026-10-07', s, {}), 720);
+  assert.equal(expectedMinutes('2026-10-04', s, {}), 0); // antes do início também segue a escala
+  assert.equal(expectedMinutes('2026-10-03', s, {}), 720);
+  assert.equal(expectedMinutes('2026-10-05', s, { '2026-10-05': { occurrence: 'ferias' } }), 0);
+  assert.match(scheduleSummary(s), /Escala de 2 dias/);
+});
+
+test('jornada semanal personalizada', () => {
+  const s = { ...settings, schedule: [0, 600, 600, 600, 600, 240, 0] };
+  assert.equal(expectedMinutes('2026-10-09', s, {}), 240); // sexta
+  assert.equal(scheduleSummary(s), '44h00 semanais');
 });

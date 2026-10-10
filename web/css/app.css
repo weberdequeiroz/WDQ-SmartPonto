@@ -275,8 +275,19 @@ textarea.input { min-height: 80px; resize: vertical; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .sched { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
 .sched label { display: flex; align-items: center; gap: 8px; }
-.sched label span { width: 70px; font-size: 14px; }
+.sched label span { width: 74px; flex: none; font-size: 14px; }
+.sched label .input { flex: 1; min-width: 0; }
 .sched .input { min-height: 40px; padding: 6px 10px; }
+.input.dur { text-align: center; font-variant-numeric: tabular-nums; }
+.cycle-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.cycle-day { display: flex; align-items: center; gap: 6px; padding: 6px 4px 6px 10px; border: 1px solid var(--border); border-radius: 12px; }
+.cycle-day span { flex: 1; font-size: 14px; color: var(--muted); white-space: nowrap; }
+.cycle-day .input { width: 96px; flex: none; }
+.cycle-day.now { border-color: var(--brand); }
+.cycle-day.now span { color: var(--brand); font-weight: 700; }
+.cycle-day .input { min-height: 38px; padding: 6px 8px; }
+.cycle-day .link { padding: 6px; }
+.cycle-day .link:disabled { opacity: .3; }
 
 .switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .switch:last-child { border-bottom: 0; }

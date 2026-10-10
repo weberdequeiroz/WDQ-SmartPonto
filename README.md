@@ -25,7 +25,7 @@ Para publicar o endereço do iPhone: no GitHub, **Settings → Pages → Source:
 | **Ponto** | Relógio, situação atual (trabalhando, em intervalo, fora), botão principal com a próxima marcação, motivo do intervalo (refeição, café, pessoal, médico…), horas do dia, saída prevista, progresso da jornada, banco de horas e marcações de hoje. Botão **Desfazer** logo após marcar. |
 | **Histórico** | Mês a mês, cada dia com seus horários e saldo. Toque no dia para corrigir, incluir marcação esquecida ou lançar **folga, feriado, férias, atestado, abono ou falta**. |
 | **Relatórios** | Dia, semana, mês, ano ou período livre: trabalhado, previsto, saldo, horas extras, débito, média por dia, faltas e abonos, gráfico e tabela. Exporta **PDF** (espelho de ponto com campos de assinatura), **planilha CSV** (Excel / Google Planilhas) e **resumo em texto**. |
-| **Ajustes** | Nome, empresa, cargo e matrícula; jornada por dia da semana (modelos de 30h, 36h, 40h e 44h); tolerância diária (padrão de 10 min, CLT art. 58 §1º); saldo inicial do banco de horas; confirmação antes de marcar; localização opcional; tema claro/escuro; backup. |
+| **Ajustes** | Nome, empresa, cargo e matrícula; jornada livre: horas de cada dia da semana ou escala de revezamento (12x36, 24x48, 6x1, 5x1, 4x2 ou qualquer sequência montada por você), com seus próprios modelos salvos; tolerância diária (padrão de 10 min, CLT art. 58 §1º); saldo inicial do banco de horas; confirmação antes de marcar; localização opcional; tema claro/escuro; backup. |
 
 Também alerta sobre saída não registrada, intervalo menor que 1h em jornada acima de 6h e mais de 10h trabalhadas no dia. Turnos noturnos que passam da meia-noite contam no dia da entrada.
 
