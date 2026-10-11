@@ -32,13 +32,11 @@ Também alerta sobre saída não registrada, intervalo menor que 1h em jornada a
 
 ## Meu horário de trabalho
 
-Em **Ajustes → Meu horário de trabalho**, a pessoa informa só os horários de relógio (entrada, saída e volta do almoço, saída) e o app calcula as horas do dia e da semana. Três formas:
+Em **Ajustes → Meu horário de trabalho**, só horários de relógio; o app calcula as horas do dia e da semana.
 
-- **Todo dia igual:** marca os dias da semana e informa um horário.
-- **Por dia:** cada dia da semana com o seu horário (ex.: sábado só de manhã). Toque no dia para editar e, se quiser, aplicar o mesmo horário em outros dias.
-- **Escala:** primeiro dia, sequência de trabalho/folga (6x1, 12x36, 24x48…) e o horário dos dias de trabalho.
-
-Há modelos prontos e dá para salvar os seus. Um resumo mostra as horas por dia e por semana e os próximos 7 dias. Configurações antigas (horas por dia) são convertidas automaticamente.
+- **Dias fixos:** toque nos dias em que trabalha e informe entrada, saída, saída e volta do almoço. Em *Algum dia tem horário diferente?* ajuste um dia específico (ex.: sábado até 12:00).
+- **Escala:** toque no tipo (6x1, 5x1, 4x2, 12x36, 24x48) e informe **o seu último dia de folga** — o app monta a sequência. *Outra* permite montar uma sequência personalizada.
+- Um **calendário dos próximos 14 dias** mostra trabalho e folga para conferir. Configurações antigas são convertidas automaticamente.
 
 ## Esqueceu de marcar? Preencher e corrigir pela jornada
 

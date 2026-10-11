@@ -1,5 +1,5 @@
 // Armazenamento local em IndexedDB. Tudo fica no aparelho; nada é enviado a servidores.
-import { DEFAULT_SETTINGS, migrateWorkPlan } from './calc.js';
+import { DEFAULT_SETTINGS, migrateWorkPlan, normalizePlan } from './calc.js';
 
 const DB_NAME = 'wdq-smartponto';
 const DB_VERSION = 1;
@@ -33,7 +33,7 @@ function tx(stores, mode = 'readonly') {
 
 /** Garante o horário de trabalho por relógio (converte a configuração antiga). */
 function withPlan(settings) {
-  return settings.workPlan ? settings : { ...settings, workPlan: migrateWorkPlan(settings) };
+  return { ...settings, workPlan: normalizePlan(settings.workPlan || migrateWorkPlan(settings)) };
 }
 
 export async function openStore() {

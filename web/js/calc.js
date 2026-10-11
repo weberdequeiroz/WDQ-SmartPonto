@@ -262,7 +262,52 @@ export function shiftFor(key, settings) {
     return c.pattern[((diff % n) + n) % n] ? c.shift : null;
   }
   if (wp.mode === 'perday') return wp.perDay?.[wd] || null;
-  return (wp.days || []).includes(wd) ? wp.shift : null;
+  if (!(wp.days || []).includes(wd)) return null;
+  return wp.overrides?.[wd] || wp.shift;
+}
+
+// Escalas conhecidas: true = trabalho. Todas terminam em folga.
+export const CYCLE_TYPES = {
+  '6x1': { label: '6x1', hint: '6 trabalho, 1 folga', pattern: [true, true, true, true, true, true, false] },
+  '5x1': { label: '5x1', hint: '5 trabalho, 1 folga', pattern: [true, true, true, true, true, false] },
+  '4x2': { label: '4x2', hint: '4 trabalho, 2 folgas', pattern: [true, true, true, true, false, false] },
+  '12x36': { label: '12x36', hint: 'Dia sim, dia não', pattern: [true, false] },
+  '24x48': { label: '24x48', hint: '24h, 2 folgas', pattern: [true, false, false] },
+};
+
+export function cycleTypeOf(pattern) {
+  const key = JSON.stringify(pattern || []);
+  return Object.keys(CYCLE_TYPES).find((k) => JSON.stringify(CYCLE_TYPES[k].pattern) === key) || 'custom';
+}
+
+/** Início da sequência a partir do último dia de folga (último dia do padrão). */
+export function cycleStartFromLastOff(lastOff, pattern) {
+  return addDays(lastOff, -(pattern.length - 1));
+}
+
+/** Último dia de folga (fim do padrão) até hoje, a partir do início da sequência. */
+export function cycleLastOff(start, pattern, todayKey) {
+  const n = pattern.length;
+  const diff = Math.round((parseDay(todayKey) - parseDay(start)) / (24 * HOUR));
+  const idx = ((diff % n) + n) % n;
+  return addDays(todayKey, -((idx - (n - 1) + n) % n));
+}
+
+/** Converte formatos anteriores para { mode: 'week' | 'cycle' }. */
+export function normalizePlan(wp) {
+  if (!wp || wp.mode === 'week') return wp;
+  if (wp.mode === 'cycle') return { ...wp, cycle: { ...wp.cycle, type: wp.cycle?.type || cycleTypeOf(wp.cycle?.pattern) } };
+  if (wp.mode === 'perday') {
+    const list = (wp.perDay || []).map((sh, i) => [i, sh]).filter(([, sh]) => sh);
+    const count = {};
+    list.forEach(([, sh]) => { const k = JSON.stringify(sh); count[k] = (count[k] || 0) + 1; });
+    const main = Object.entries(count).sort((a, b) => b[1] - a[1])[0];
+    const shift = main ? JSON.parse(main[0]) : (wp.shift || { in: '08:00', bs: '12:00', be: '13:00', out: '17:00' });
+    const overrides = {};
+    list.forEach(([i, sh]) => { if (JSON.stringify(sh) !== JSON.stringify(shift)) overrides[i] = sh; });
+    return { mode: 'week', days: list.map(([i]) => i), shift, overrides, cycle: wp.cycle };
+  }
+  return { mode: 'week', days: wp.days || [1, 2, 3, 4, 5], shift: wp.shift, overrides: {}, cycle: wp.cycle };
 }
 
 /** "10:00–18:20 · almoço 14:00–15:00" */
@@ -307,7 +352,9 @@ export function scheduleSummary(settings) {
       return `${fmtDur(shiftMinutes(wp.cycle?.shift) * MIN)} por dia de trabalho · escala de ${p.length} dias (${work} de trabalho, ${p.length - work} de folga) · média de ${fmtDur(avg * MIN)} por semana`;
     }
     let week = 0;
-    for (let wd = 0; wd < 7; wd++) week += shiftMinutes(wp.mode === 'perday' ? wp.perDay?.[wd] : (wp.days || []).includes(wd) ? wp.shift : null);
+    for (let wd = 0; wd < 7; wd++) {
+      week += shiftMinutes(wp.mode === 'perday' ? wp.perDay?.[wd] : (wp.days || []).includes(wd) ? (wp.overrides?.[wd] || wp.shift) : null);
+    }
     return `${fmtDur(week * MIN)} por semana`;
   }
   if (settings.scheduleMode === 'cycle' && settings.cycle?.days?.length) {

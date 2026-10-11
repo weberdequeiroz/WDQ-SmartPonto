@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildDays, buildReport, currentState, summarizeDay, hourBank, dayKey, fmtDur, parseHHMM,
-  weekRange, monthRange, expectedMinutes, scheduleSummary, dayTemplate, completeWithTemplate, shiftMinutes, migrateWorkPlan, hhmm, DEFAULT_SETTINGS, HOUR, MIN,
+  weekRange, monthRange, expectedMinutes, scheduleSummary, dayTemplate, completeWithTemplate, shiftMinutes, migrateWorkPlan, hhmm,
+  CYCLE_TYPES, cycleStartFromLastOff, cycleLastOff, cycleTypeOf, normalizePlan, DEFAULT_SETTINGS, HOUR, MIN,
 } from '../web/js/calc.js';
 
 const at = (y, m, d, h, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -197,4 +198,25 @@ test('conversão da configuração antiga', () => {
   const same = migrateWorkPlan({ ...settings });
   assert.equal(same.mode, 'same');
   assert.deepEqual(same.days, [1, 2, 3, 4, 5]);
+});
+
+test('escala pelo último dia de folga e semana com dia diferente', () => {
+  const pat = CYCLE_TYPES['6x1'].pattern;
+  const start = cycleStartFromLastOff('2026-10-04', pat); // folga no domingo 04/10
+  assert.equal(start, '2026-09-28');
+  const s = { ...settings, workPlan: { mode: 'cycle', cycle: { type: '6x1', start, pattern: pat, shift: { in: '10:00', bs: '14:00', be: '15:00', out: '18:20' } } } };
+  assert.equal(expectedMinutes('2026-10-04', s, {}), 0);
+  assert.equal(expectedMinutes('2026-10-05', s, {}), 440);
+  assert.equal(expectedMinutes('2026-10-11', s, {}), 0); // próxima folga: 7 dias depois
+  assert.equal(cycleLastOff(start, pat, '2026-10-10'), '2026-10-04');
+  assert.equal(cycleLastOff(start, pat, '2026-10-11'), '2026-10-11');
+  assert.equal(cycleTypeOf([true, false]), '12x36');
+  assert.equal(cycleTypeOf([false, true]), 'custom');
+  const sat = { in: '08:00', bs: '', be: '', out: '12:00' };
+  const week = { ...settings, workPlan: { mode: 'week', days: [1, 2, 3, 4, 5, 6], shift: { in: '08:00', bs: '12:00', be: '13:00', out: '17:00' }, overrides: { 6: sat } } };
+  assert.equal(expectedMinutes('2026-10-10', week, {}), 240);
+  assert.equal(scheduleSummary(week), '44h00 por semana');
+  const norm = normalizePlan({ mode: 'perday', perDay: [null, week.workPlan.shift, week.workPlan.shift, week.workPlan.shift, week.workPlan.shift, week.workPlan.shift, sat] });
+  assert.deepEqual(norm.days, [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(norm.overrides, { 6: sat });
 });

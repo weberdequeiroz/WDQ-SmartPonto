@@ -474,6 +474,33 @@ details.more[open] summary { margin-bottom: 10px; }
 .tpl-preview .legend-row span { font-weight: 600; }
 .tpl-preview b { white-space: nowrap; }
 
+.mode-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.mode-pick button, .cycle-types button {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left;
+  padding: 12px; border-radius: 14px; border: 2px solid var(--border); background: var(--surface-2);
+}
+.mode-pick button svg.i { color: var(--brand); margin-bottom: 4px; }
+.mode-pick button small, .cycle-types button small { color: var(--muted); font-size: 12px; }
+.mode-pick button.on, .cycle-types button.on { border-color: var(--brand); background: linear-gradient(135deg, rgba(79, 70, 229, .10), rgba(124, 58, 237, .10)); }
+.cycle-types { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.cycle-types button { padding: 10px; }
+.cycle-types button b { font-size: 17px; }
+.cycle-types button small { font-size: 11px; line-height: 1.25; }
+.ovr-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.ovr-row:last-child { border-bottom: 0; }
+.ovr-row > b { width: 70px; font-size: 14px; }
+.cal-title { padding: 10px 14px 6px; }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; padding: 0 10px 12px; }
+.cal-cell { display: flex; flex-direction: column; align-items: center; padding: 6px 0; border-radius: 10px; font-variant-numeric: tabular-nums; }
+.cal-cell small { font-size: 10px; text-transform: uppercase; color: var(--muted); }
+.cal-cell b { font-size: 16px; line-height: 1.2; }
+.cal-cell span { font-size: 10px; }
+.cal-cell.work { background: linear-gradient(135deg, rgba(79, 70, 229, .16), rgba(124, 58, 237, .16)); }
+.cal-cell.work span { color: var(--brand); font-weight: 700; }
+.cal-cell.off { background: var(--surface-2); color: var(--muted); }
+.cal-cell.today { box-shadow: inset 0 0 0 2px var(--accent); }
+.plan-total small { font-weight: 500; opacity: .8; }
+
 /* ---------- Painéis (sheets) ---------- */
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 50; background: rgba(8, 8, 20, .5);

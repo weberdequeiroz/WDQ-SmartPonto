@@ -3,7 +3,7 @@ import {
   buildDays, buildReport, summarizeDay, currentState, hourBank, suggestedNext,
   dayKey, parseDay, addDays, hhmm, fmtDur, fmtClock, fmtDay, fmtDayLong, parseHHMM, minutesToHHMM,
   weekRange, monthRange, yearRange, scheduleSummary, dayTemplate, completeWithTemplate,
-  shiftFor, shiftBreak, shiftMinutes, shiftText, migrateWorkPlan,
+  shiftFor, shiftBreak, shiftMinutes, shiftText, CYCLE_TYPES, cycleTypeOf, cycleStartFromLastOff, cycleLastOff,
 } from './calc.js';
 import {
   state, openStore, addPunch, updatePunch, deletePunch, saveSettings, setDayInfo,
@@ -20,7 +20,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.4.0';
+export const VERSION = '1.4.1';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -768,12 +768,13 @@ function openBulkFill(keys, title = 'Preencher pela jornada') {
     const work = !i.jornada ? [] : i.has
       ? [['replace', 'Refazer pela jornada'], ['complete', 'Completar o que falta']]
       : [['fill', 'Preencher pela jornada']];
-    return [...work, ...Object.entries(OCCURRENCES).map(([v, o]) => [v, o.label]), ['skip', i.has ? 'Manter como está' : 'Deixar em branco']];
+    return [...work, ...Object.entries(OCCURRENCES).map(([v, o]) => [v, o.label]), ...(i.has ? [['clear', 'Apagar as marcações']] : []), ['skip', i.has ? 'Manter como está' : 'Deixar em branco']];
   };
   const detail = (k) => {
     const c = choice[k];
     const i = info[k];
-    if (c === 'skip') return !i.jornada ? 'sem jornada neste dia' : i.has ? 'sem alteração' : 'continua em branco';
+    if (c === 'clear') return 'as marcações do dia serão apagadas';
+    if (c === 'skip') return !i.jornada ? (i.has ? 'folga no seu horário · marcações mantidas' : 'folga no seu horário') : i.has ? 'sem alteração' : 'continua em branco';
     if (OCCURRENCES[c]) return OCCURRENCES[c].label;
     const tpl = tplOf(k, withBreak ?? undefined);
     if (c === 'complete') {
@@ -851,6 +852,11 @@ function openBulkFill(keys, title = 'Preencher pela jornada') {
         if (OCCURRENCES[c]) {
           await setDayInfo(k, { ...(state.dayInfo[k] || {}), occurrence: c });
           marked++;
+          continue;
+        }
+        if (c === 'clear') {
+          for (const p of dayPunches(k)) { await deletePunch(p.id); removed.push(p); }
+          worked++;
           continue;
         }
         const tpl = tplOf(k, withBreak ?? undefined);
@@ -1129,311 +1135,212 @@ ACTIONS.repPdf = () => {
 // ---------- Tela: Ajustes ----------
 // ---------- Ajustes: horário de trabalho ----------
 const SH = (i, bs, be, o) => ({ in: i, bs, be, out: o });
-const PRESETS = [
-  { name: 'Seg a sex · 08:00 às 17:00 · almoço 12:00–13:00 (40h)', plan: { mode: 'same', days: [1, 2, 3, 4, 5], shift: SH('08:00', '12:00', '13:00', '17:00') } },
-  { name: 'Seg a sex · 08:00 às 17:48 · almoço 12:00–13:00 (44h)', plan: { mode: 'same', days: [1, 2, 3, 4, 5], shift: SH('08:00', '12:00', '13:00', '17:48') } },
-  { name: 'Seg a sex 08:00 às 17:00 + sábado 08:00 às 12:00 (44h)', plan: { mode: 'perday', perDay: [null, ...Array(5).fill(SH('08:00', '12:00', '13:00', '17:00')), SH('08:00', '', '', '12:00')] } },
-  { name: 'Seg a sex · 08:00 às 14:00, sem almoço (30h)', plan: { mode: 'same', days: [1, 2, 3, 4, 5], shift: SH('08:00', '', '', '14:00') } },
-  { name: 'Meio período · seg a sex 08:00 às 12:00 (20h)', plan: { mode: 'same', days: [1, 2, 3, 4, 5], shift: SH('08:00', '', '', '12:00') } },
-  { name: 'Escala 6x1 · 08:00 às 16:20 · almoço 12:00–13:00', plan: { mode: 'cycle', cycle: { pattern: [true, true, true, true, true, true, false], shift: SH('08:00', '12:00', '13:00', '16:20') } } },
-  { name: 'Escala 5x1 · 08:00 às 17:00 · almoço 12:00–13:00', plan: { mode: 'cycle', cycle: { pattern: [true, true, true, true, true, false], shift: SH('08:00', '12:00', '13:00', '17:00') } } },
-  { name: 'Escala 12x36 · 07:00 às 19:00 · intervalo 12:00–13:00', plan: { mode: 'cycle', cycle: { pattern: [true, false], shift: SH('07:00', '12:00', '13:00', '19:00') } } },
-  { name: 'Escala 24x48 · 07:00 às 07:00', plan: { mode: 'cycle', cycle: { pattern: [true, false, false], shift: SH('07:00', '', '', '07:00') } } },
-];
-const MODE_LABEL = { same: 'Todo dia igual', perday: 'Por dia', cycle: 'Escala' };
+const DEFAULT_SHIFT = SH('08:00', '12:00', '13:00', '17:00');
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const plan = () => state.settings.workPlan;
-
-/** Plano completo a partir de um modelo, preservando o que o modelo não define. */
+// Opções rápidas do primeiro acesso.
+const PRESETS = [
+  { name: 'Segunda a sexta, 08:00 às 17:00', plan: { mode: 'week', days: [1, 2, 3, 4, 5], shift: SH('08:00', '12:00', '13:00', '17:00'), overrides: {} } },
+  { name: 'Segunda a sexta, 08:00 às 18:00', plan: { mode: 'week', days: [1, 2, 3, 4, 5], shift: SH('08:00', '12:00', '13:00', '18:00'), overrides: {} } },
+  { name: 'Segunda a sábado (sábado até 12:00)', plan: { mode: 'week', days: [1, 2, 3, 4, 5, 6], shift: SH('08:00', '12:00', '13:00', '17:00'), overrides: { 6: SH('08:00', '', '', '12:00') } } },
+  { name: 'Escala 6x1', plan: { mode: 'cycle', cycle: { type: '6x1', pattern: CYCLE_TYPES['6x1'].pattern, shift: SH('08:00', '12:00', '13:00', '16:20') } } },
+  { name: 'Escala 12x36', plan: { mode: 'cycle', cycle: { type: '12x36', pattern: CYCLE_TYPES['12x36'].pattern, shift: SH('07:00', '12:00', '13:00', '19:00') } } },
+];
 function planFrom(p) {
-  const cur = plan();
-  const next = { ...clone(cur), ...clone(p) };
-  if (next.mode === 'cycle') next.cycle = { start: cur.cycle?.start || today(), ...clone(p.cycle || cur.cycle) };
-  if (next.mode === 'perday' && !next.perDay) next.perDay = [0, 1, 2, 3, 4, 5, 6].map((wd) => ((cur.days || []).includes(wd) ? clone(cur.shift) : null));
+  const next = { ...clone(plan() || {}), ...clone(p) };
+  if (next.mode === 'cycle' && !next.cycle.start) next.cycle.start = cycleStartFromLastOff(today(), next.cycle.pattern);
   return next;
-}
-function customPlans() {
-  // Modelos salvos em versões antigas (horas por dia) são convertidos.
-  return (state.settings.customPresets || []).map((p) => ({
-    name: p.name,
-    plan: p.plan || migrateWorkPlan({ ...state.settings, scheduleMode: p.mode === 'cycle' ? 'cycle' : 'weekly', schedule: p.schedule, cycle: { start: today(), days: p.days || [] } }),
-  }));
 }
 async function savePlan(next) {
   await saveSettings({ workPlan: next });
   render();
 }
 
-function shiftEditorHTML(sh, path, { compact = false } = {}) {
+function shiftEditorHTML(sh, path) {
   const noBreak = !sh.bs && !sh.be;
-  const min = shiftMinutes(sh);
   const bad = !noBreak && !shiftBreak(sh);
   const t = (k, label) => `<label class="sh-field ${(k === 'bs' || k === 'be') && noBreak ? 'off' : ''}"><span>${label}</span><input class="input" type="time" data-sh="${path}" data-k="${k}" value="${esc(sh[k] || '')}" ${(k === 'bs' || k === 'be') && noBreak ? 'disabled' : ''}></label>`;
-  return `<div class="shift ${compact ? 'compact' : ''}">
-      ${t('in', 'Entrada')}${t('bs', 'Saída almoço')}${t('be', 'Volta almoço')}${t('out', 'Saída')}
-    </div>
+  return `<div class="shift">${t('in', 'Entrada')}${t('out', 'Saída')}${t('bs', 'Saída p/ almoço')}${t('be', 'Volta do almoço')}</div>
     <div class="shift-foot">
       <label class="check"><input type="checkbox" data-nobreak="${path}" ${noBreak ? 'checked' : ''}> Sem almoço</label>
-      <span class="shift-total ${bad ? 'neg' : ''}">${bad ? 'Almoço fora do horário' : `= ${fmtDur(min * MIN)} de trabalho`}</span>
+      <span class="shift-total ${bad ? 'neg' : ''}">${bad ? 'Almoço fora do horário' : `= ${fmtDur(shiftMinutes(sh) * MIN)} de trabalho`}</span>
     </div>`;
 }
 
-function planPreviewHTML() {
-  const rows = [];
-  for (let i = 0; i < 7; i++) {
+/** Calendário dos próximos 14 dias: trabalho ou folga. */
+function planCalendarHTML() {
+  const cells = [];
+  for (let i = 0; i < 14; i++) {
     const k = addDays(today(), i);
     const sh = shiftFor(k, state.settings);
-    const txt = !sh ? 'Folga' : shiftBreak(sh) ? `${sh.in} · ${sh.bs}–${sh.be} · ${sh.out}` : `${sh.in} · ${sh.out}`;
-    rows.push(`<div class="${sh ? '' : 'off'}"><span>${i === 0 ? 'Hoje' : esc(fmtDay(k, { year: false }))}</span><b>${esc(txt)}</b></div>`);
+    const d = parseDay(k);
+    cells.push(`<div class="cal-cell ${sh ? 'work' : 'off'} ${i === 0 ? 'today' : ''}">
+      <small>${WEEKDAYS[d.getDay()].slice(0, 3)}</small><b>${d.getDate()}</b><span>${sh ? `${sh.in}` : 'folga'}</span></div>`);
   }
-  return `<div class="tpl-preview"><div class="legend-row"><span>Próximos dias</span><span>entrada · almoço · saída</span></div>${rows.join('')}</div>`;
+  return `<div class="cal">${cells.join('')}</div>`;
+}
+
+function planTotalHTML(s) {
+  const wp = s.workPlan;
+  let day; let week;
+  if (wp.mode === 'cycle') {
+    const p = wp.cycle.pattern;
+    day = shiftMinutes(wp.cycle.shift);
+    week = p.length ? (p.filter(Boolean).length * day / p.length) * 7 : 0;
+  } else {
+    const mins = (wp.days || []).map((d) => shiftMinutes(wp.overrides?.[d] || wp.shift));
+    week = mins.reduce((a, b) => a + b, 0);
+    day = mins.length && mins.every((m) => m === mins[0]) ? mins[0] : null;
+  }
+  return `<div class="plan-total">${icon('check')}<div class="big">${day !== null ? `${fmtDur(day * MIN)} por dia · ` : ''}${fmtDur(week * MIN)} por semana${wp.mode === 'cycle' ? ' <small>(média)</small>' : ''}</div></div>`;
 }
 
 function jornadaHTML(s) {
   const wp = s.workPlan;
-  const mode = wp.mode || 'same';
-  let body = '';
-  if (mode === 'same') {
+  const isCycle = wp.mode === 'cycle';
+  let body;
+  if (!isCycle) {
+    const days = wp.days || [];
+    const order = [1, 2, 3, 4, 5, 6, 0];
     body = `
-      <div class="step"><span class="step-n">1</span><b>Dias em que você trabalha</b></div>
-      <div class="day-picker" style="margin-bottom:14px">${[1, 2, 3, 4, 5, 6, 0].map((wd) => `<button type="button" class="${(wp.days || []).includes(wd) ? 'on' : ''}" data-wday="${wd}">${WEEKDAYS[wd].slice(0, 3)}</button>`).join('')}</div>
-      <div class="step"><span class="step-n">2</span><b>Seu horário</b></div>
+      <div class="step"><span class="step-n">1</span><b>Em quais dias você trabalha?</b></div>
+      <div class="day-picker" style="margin-bottom:16px">${order.map((wd) => `<button type="button" class="${days.includes(wd) ? 'on' : ''}" data-wday="${wd}">${WEEKDAYS[wd].slice(0, 3)}</button>`).join('')}</div>
+      <div class="step"><span class="step-n">2</span><b>Qual é o seu horário?</b></div>
       ${shiftEditorHTML(wp.shift, 'shift')}
-      <p class="small muted" style="margin:8px 0 0">Seu sábado ou algum dia tem horário diferente? Use <b>Por dia</b>.</p>`;
-  } else if (mode === 'perday') {
-    body = `${[1, 2, 3, 4, 5, 6, 0].map((wd) => {
-      const sh = wp.perDay?.[wd];
-      return `<div class="perday ${sh ? '' : 'off'}">
-        <div class="perday-head"><b>${WEEKDAYS[wd]}</b>
-          <label class="switch-mini"><input type="checkbox" data-dayon="${wd}" ${sh ? 'checked' : ''}></label>
-        </div>
-        ${sh ? `<button class="perday-sum" data-act="editDayShift" data-arg="${wd}">
-            <span><b class="t">${sh.in} às ${sh.out}</b><br><small class="muted">${shiftBreak(sh) ? `almoço ${sh.bs}–${sh.be}` : 'sem almoço'}</small></span>
-            <b>${fmtDur(shiftMinutes(sh) * MIN)}</b>${icon('edit')}
-          </button>` : '<span class="small muted">Folga</span>'}
-      </div>`;
-    }).join('')}`;
+      ${days.length > 1 ? `<details class="more" style="margin-top:14px" ${Object.keys(wp.overrides || {}).some((d) => days.includes(Number(d))) ? 'open' : ''}>
+        <summary>Algum dia tem horário diferente?</summary>
+        ${order.filter((wd) => days.includes(wd)).map((wd) => {
+          const o = wp.overrides?.[wd];
+          return `<div class="ovr-row"><b>${WEEKDAYS[wd]}</b>
+            <span class="grow small ${o ? '' : 'muted'}">${o ? esc(shiftText(o)) : 'Igual aos outros dias'}</span>
+            <button class="link" data-act="editOverride" data-arg="${wd}">${o ? 'Editar' : 'Mudar'}</button>
+            ${o ? `<button class="link" data-act="clearOverride" data-arg="${wd}" aria-label="Voltar ao horário normal">${icon('trash')}</button>` : ''}
+          </div>`;
+        }).join('')}
+      </details>` : ''}`;
   } else {
     const c = wp.cycle;
-    const n = c.pattern.length;
-    const diff = Math.round((parseDay(today()) - parseDay(c.start || today())) / (24 * HOUR));
-    const pos = ((diff % n) + n) % n;
+    const type = c.type || cycleTypeOf(c.pattern);
+    const lastOff = cycleLastOff(c.start || today(), c.pattern, today());
     body = `
-      <div class="step"><span class="step-n">1</span><b>Primeiro dia da escala</b></div>
-      <input class="input" type="date" data-cstart value="${esc(c.start || today())}" style="margin-bottom:14px">
-      <div class="step"><span class="step-n">2</span><b>Sequência de trabalho e folga</b></div>
-      <p class="small muted" style="margin:-4px 0 8px">Toque em um dia para trocar entre trabalho e folga.</p>
-      <div class="pattern">
-        ${c.pattern.map((w, i) => `<button type="button" class="${w ? 'on' : ''} ${i === pos ? 'now' : ''}" data-pat="${i}"><small>Dia ${i + 1}${i === pos ? ' · hoje' : ''}</small>${w ? 'Trabalho' : 'Folga'}</button>`).join('')}
-        <button type="button" class="pat-add" data-act="patAdd" aria-label="Adicionar dia">+</button>
-        ${n > 1 ? '<button type="button" class="pat-add" data-act="patDel" aria-label="Remover último dia">−</button>' : ''}
+      <div class="step"><span class="step-n">1</span><b>Qual é a sua escala?</b></div>
+      <div class="cycle-types">
+        ${Object.entries(CYCLE_TYPES).map(([k, v]) => `<button type="button" class="${type === k ? 'on' : ''}" data-ctype="${k}"><b>${v.label}</b><small>${esc(v.hint)}</small></button>`).join('')}
+        <button type="button" class="${type === 'custom' ? 'on' : ''}" data-ctype="custom"><b>Outra</b><small>Personalizada</small></button>
       </div>
-      <div class="step" style="margin-top:14px"><span class="step-n">3</span><b>Horário nos dias de trabalho</b></div>
+      ${type === 'custom' ? `
+        <p class="small muted" style="margin:10px 0 6px">Toque nos dias para trocar entre trabalho e folga. O dia 1 começa em:</p>
+        <input class="input" type="date" data-cstart value="${esc(c.start || today())}" style="margin-bottom:8px">
+        <div class="pattern">
+          ${c.pattern.map((w, i) => `<button type="button" class="${w ? 'on' : ''}" data-pat="${i}"><small>Dia ${i + 1}</small>${w ? 'Trabalho' : 'Folga'}</button>`).join('')}
+          <button type="button" class="pat-add" data-act="patAdd" aria-label="Adicionar dia">+</button>
+          ${c.pattern.length > 1 ? '<button type="button" class="pat-add" data-act="patDel" aria-label="Remover último dia">−</button>' : ''}
+        </div>` : `
+        <div class="step" style="margin-top:16px"><span class="step-n">2</span><b>Qual foi o seu último dia de folga?</b></div>
+        <input class="input" type="date" data-lastoff value="${esc(lastOff)}" max="${today()}">`}
+      <div class="step" style="margin-top:16px"><span class="step-n">${type === 'custom' ? 2 : 3}</span><b>Horário nos dias de trabalho</b></div>
       ${shiftEditorHTML(c.shift, 'cycle.shift')}`;
   }
-  const custom = customPlans();
   return `
     <h2>Meu horário de trabalho</h2>
-    <div class="seg">${Object.entries(MODE_LABEL).map(([k, v]) => `<button data-act="planMode" data-arg="${k}" class="${mode === k ? 'active' : ''}">${v}</button>`).join('')}</div>
-    <label class="field"><span>Começar de um modelo pronto</span>
-      <select class="input" data-act="preset"><option value="">Escolher…</option>
-        <optgroup label="Modelos">${PRESETS.map((p, i) => `<option value="b:${i}">${esc(p.name)}</option>`).join('')}</optgroup>
-        ${custom.length ? `<optgroup label="Meus modelos">${custom.map((p, i) => `<option value="c:${i}">${esc(p.name)}</option>`).join('')}</optgroup>` : ''}
-      </select>
-    </label>
+    <div class="mode-pick">
+      <button data-act="planMode" data-arg="week" class="${!isCycle ? 'on' : ''}">${icon('calendar')}<b>Dias fixos</b><small>Ex.: segunda a sexta</small></button>
+      <button data-act="planMode" data-arg="cycle" class="${isCycle ? 'on' : ''}">${icon('repeat')}<b>Escala</b><small>6x1, 12x36…</small></button>
+    </div>
     ${body}
     <div class="plan-result">
       ${planTotalHTML(s)}
-      ${planPreviewHTML()}
-    </div>
-    <div class="row" style="justify-content:space-between;margin-top:10px">
-      <button class="link" data-act="savePreset">${icon('plus')} Salvar como meu modelo</button>
-      ${custom.length ? `<button class="link" data-act="managePresets">Meus modelos (${custom.length})</button>` : ''}
+      <div class="cal-title small muted">Próximos 14 dias</div>
+      ${planCalendarHTML()}
     </div>`;
 }
 
-/** Resumo em destaque: horas por dia e por semana. */
-function planTotalHTML(s) {
-  const wp = s.workPlan;
-  let day; let week; let note = '';
-  if (wp.mode === 'cycle') {
-    const p = wp.cycle.pattern;
-    const w = p.filter(Boolean).length;
-    day = shiftMinutes(wp.cycle.shift);
-    week = p.length ? (w * day / p.length) * 7 : 0;
-    note = `Escala de ${p.length} dias: ${w} de trabalho e ${p.length - w} de folga (média semanal)`;
-  } else {
-    const list = [0, 1, 2, 3, 4, 5, 6].map((wd) => (wp.mode === 'perday' ? wp.perDay?.[wd] : (wp.days || []).includes(wd) ? wp.shift : null)).filter(Boolean);
-    const mins = list.map(shiftMinutes);
-    week = mins.reduce((a, b) => a + b, 0);
-    day = mins.length && mins.every((m) => m === mins[0]) ? mins[0] : null;
-    note = `${list.length} ${list.length === 1 ? 'dia' : 'dias'} de trabalho por semana`;
-  }
-  return `<div class="plan-total">${icon('check')}<div>
-    <div class="big">${day !== null ? `${fmtDur(day * MIN)} por dia · ` : ''}${fmtDur(week * MIN)} por semana</div>
-    <div class="small">${esc(note)}</div></div></div>`;
-}
-
 function bindPlanEditor() {
-  const set = async (path, mutate) => {
-    const next = clone(plan());
-    const parts = path.split('.');
-    let obj = next;
-    for (let i = 0; i < parts.length - 1; i++) obj = obj[parts[i]];
-    const k = parts[parts.length - 1];
-    obj[k] = mutate(obj[k]);
-    await savePlan(next);
-  };
-  $$('[data-sh]').forEach((el) => el.addEventListener('change', () => {
-    if (!el.value && el.dataset.k !== 'bs' && el.dataset.k !== 'be') return toast('Informe o horário');
-    set(el.dataset.sh, (sh) => ({ ...sh, [el.dataset.k]: el.value }));
+  const update = async (mutate) => { const next = clone(plan()); mutate(next); await savePlan(next); };
+  const at = (obj, path) => path.split('.').reduce((o, k) => o[k], obj);
+  $$('#jornada [data-sh]').forEach((el) => el.addEventListener('change', () => {
+    if (!el.value && (el.dataset.k === 'in' || el.dataset.k === 'out')) return toast('Informe o horário');
+    update((n) => { at(n, el.dataset.sh)[el.dataset.k] = el.value; });
   }));
-  $$('[data-nobreak]').forEach((el) => el.addEventListener('change', () => {
-    set(el.dataset.nobreak, (sh) => (el.checked ? { ...sh, bs: '', be: '' } : { ...sh, bs: '12:00', be: '13:00' }));
-  }));
-  $$('[data-wday]').forEach((el) => el.addEventListener('click', () => {
+  $$('#jornada [data-nobreak]').forEach((el) => el.addEventListener('change', () => update((n) => {
+    const sh = at(n, el.dataset.nobreak);
+    if (el.checked) { sh.bs = ''; sh.be = ''; } else { sh.bs = '12:00'; sh.be = '13:00'; }
+  })));
+  $$('#jornada [data-wday]').forEach((el) => el.addEventListener('click', () => update((n) => {
     const wd = Number(el.dataset.wday);
-    set('days', (days) => {
-      const d = new Set(days || []);
-      if (d.has(wd)) d.delete(wd); else d.add(wd);
-      return [...d].sort();
-    });
-  }));
-  $$('[data-dayon]').forEach((el) => el.addEventListener('change', () => {
-    const wd = Number(el.dataset.dayon);
-    const next = clone(plan());
-    next.perDay = next.perDay || Array(7).fill(null);
-    next.perDay[wd] = el.checked ? clone(next.perDay.find(Boolean) || next.shift || SH('08:00', '12:00', '13:00', '17:00')) : null;
-    savePlan(next);
-  }));
-  $$('[data-pat]').forEach((el) => el.addEventListener('click', () => {
-    const i = Number(el.dataset.pat);
-    set('cycle.pattern', (p) => p.map((w, j) => (j === i ? !w : w)));
-  }));
-  $('[data-cstart]')?.addEventListener('change', (e) => {
-    if (e.target.value) set('cycle.start', () => e.target.value);
+    const d = new Set(n.days || []);
+    if (d.has(wd)) d.delete(wd); else d.add(wd);
+    n.days = [...d].sort();
+  })));
+  $$('#jornada [data-ctype]').forEach((el) => el.addEventListener('click', () => update((n) => {
+    const t = el.dataset.ctype;
+    const lastOff = cycleLastOff(n.cycle.start || today(), n.cycle.pattern, today());
+    n.cycle.type = t;
+    if (t !== 'custom') {
+      n.cycle.pattern = [...CYCLE_TYPES[t].pattern];
+      n.cycle.start = cycleStartFromLastOff(lastOff, n.cycle.pattern);
+    }
+  })));
+  $('#jornada [data-lastoff]')?.addEventListener('change', (e) => {
+    if (!e.target.value) return;
+    update((n) => { n.cycle.start = cycleStartFromLastOff(e.target.value, n.cycle.pattern); });
   });
+  $('#jornada [data-cstart]')?.addEventListener('change', (e) => {
+    if (e.target.value) update((n) => { n.cycle.start = e.target.value; });
+  });
+  $$('#jornada [data-pat]').forEach((el) => el.addEventListener('click', () => update((n) => {
+    const i = Number(el.dataset.pat);
+    n.cycle.pattern = n.cycle.pattern.map((w, j) => (j === i ? !w : w));
+  })));
 }
 
-/** Horário principal do plano atual, para levar junto ao trocar de modo. */
-function mainShift(wp) {
-  if (wp.mode === 'cycle') return wp.cycle?.shift;
-  if (wp.mode === 'perday') return (wp.perDay || []).find(Boolean) || wp.shift;
-  return wp.shift;
-}
 ACTIONS.planMode = (mode) => {
   const cur = plan();
   if (cur.mode === mode) return;
-  const sh = clone(mainShift(cur) || SH('08:00', '12:00', '13:00', '17:00'));
   const next = clone(cur);
+  const sh = clone(cur.mode === 'cycle' ? cur.cycle.shift : cur.shift || DEFAULT_SHIFT);
   next.mode = mode;
-  // Dias de trabalho do modo atual (dias da semana)
-  const workDays = cur.mode === 'perday' ? [0, 1, 2, 3, 4, 5, 6].filter((d) => cur.perDay?.[d])
-    : cur.mode === 'same' ? (cur.days || []) : [1, 2, 3, 4, 5].concat(cur.cycle?.pattern?.filter(Boolean).length >= 6 ? [6] : []);
-  if (mode === 'same') { next.shift = sh; next.days = workDays.length ? workDays : [1, 2, 3, 4, 5]; }
-  if (mode === 'perday') next.perDay = [0, 1, 2, 3, 4, 5, 6].map((d) => (workDays.includes(d) ? clone(sh) : null));
-  if (mode === 'cycle') {
-    const n = workDays.length || 5;
-    next.cycle = {
-      start: cur.cycle?.start || today(),
-      pattern: cur.cycle?.pattern?.length ? cur.cycle.pattern : [...Array(n).fill(true), ...Array(7 - n).fill(false)],
-      shift: sh,
-    };
+  if (mode === 'week') {
+    next.shift = sh;
+    next.days = next.days?.length ? next.days : [1, 2, 3, 4, 5];
+    next.overrides = next.overrides || {};
+  } else {
+    const c = next.cycle?.pattern?.length ? next.cycle : { type: '6x1', pattern: [...CYCLE_TYPES['6x1'].pattern] };
+    next.cycle = { ...c, type: c.type || cycleTypeOf(c.pattern), shift: sh, start: c.start || cycleStartFromLastOff(today(), c.pattern) };
   }
   savePlan(next);
 };
 ACTIONS.patAdd = () => { const n = clone(plan()); if (n.cycle.pattern.length < 31) n.cycle.pattern.push(false); savePlan(n); };
 ACTIONS.patDel = () => { const n = clone(plan()); if (n.cycle.pattern.length > 1) n.cycle.pattern.pop(); savePlan(n); };
-/** Edita o horário de um dia da semana, com a opção de aplicar em outros dias. */
-ACTIONS.editDayShift = (wdArg) => {
+ACTIONS.clearOverride = (wd) => { const n = clone(plan()); delete n.overrides[wd]; savePlan(n); };
+
+/** Horário diferente em um dia da semana (ex.: sábado só de manhã). */
+ACTIONS.editOverride = (wdArg) => {
   const wd = Number(wdArg);
-  let sh = clone(plan().perDay[wd]);
-  const also = new Set();
-  const others = [1, 2, 3, 4, 5, 6, 0].filter((d) => d !== wd);
+  let sh = clone(plan().overrides?.[wd] || plan().shift);
   openSheet(`
     <h3>${WEEKDAYS[wd]}</h3>
-    <p class="sub">Horário de trabalho deste dia</p>
+    <p class="sub">Horário deste dia, quando for diferente dos outros.</p>
     <div data-ed>${shiftEditorHTML(sh, 'tmp')}</div>
-    <div class="step" style="margin-top:16px"><b>Usar este horário também em</b></div>
-    <div class="day-picker">${others.map((d) => `<button type="button" data-also="${d}">${WEEKDAYS[d].slice(0, 3)}</button>`).join('')}</div>
     <div class="btn-row" style="margin-top:16px"><button class="btn" data-close>Cancelar</button><button class="btn primary" data-ok>${icon('check')} Salvar</button></div>`, (s) => {
     const bind = () => {
-      $$('[data-sh]', s).forEach((el) => el.addEventListener('change', () => {
-        sh = { ...sh, [el.dataset.k]: el.value };
-        $('[data-ed]', s).innerHTML = shiftEditorHTML(sh, 'tmp');
-        bind();
-      }));
+      $$('[data-sh]', s).forEach((el) => el.addEventListener('change', () => { sh = { ...sh, [el.dataset.k]: el.value }; redraw(); }));
       $$('[data-nobreak]', s).forEach((el) => el.addEventListener('change', () => {
         sh = el.checked ? { ...sh, bs: '', be: '' } : { ...sh, bs: '12:00', be: '13:00' };
-        $('[data-ed]', s).innerHTML = shiftEditorHTML(sh, 'tmp');
-        bind();
+        redraw();
       }));
     };
+    const redraw = () => { $('[data-ed]', s).innerHTML = shiftEditorHTML(sh, 'tmp'); bind(); };
     bind();
-    $$('[data-also]', s).forEach((b) => b.addEventListener('click', () => {
-      const d = Number(b.dataset.also);
-      if (also.has(d)) also.delete(d); else also.add(d);
-      b.classList.toggle('on');
-    }));
     $('[data-ok]', s).addEventListener('click', async () => {
       if (!sh.in || !sh.out) return toast('Informe entrada e saída');
-      const next = clone(plan());
-      next.perDay[wd] = clone(sh);
-      also.forEach((d) => { next.perDay[d] = clone(sh); });
+      const n = clone(plan());
+      n.overrides = n.overrides || {};
+      if (JSON.stringify(sh) === JSON.stringify(n.shift)) delete n.overrides[wd]; else n.overrides[wd] = sh;
       closeSheet();
-      await savePlan(next);
-      toast(also.size ? `Horário salvo em ${also.size + 1} dias` : 'Horário salvo');
+      await savePlan(n);
+      toast(`Horário de ${WEEKDAYS[wd].toLowerCase()} salvo`);
     });
-  });
-};
-
-ACTIONS.copyMonday = () => {
-  const n = clone(plan());
-  const mon = n.perDay?.[1];
-  if (!mon) return toast('Ative a segunda-feira primeiro');
-  n.perDay = n.perDay.map((sh, wd) => (sh && wd !== 1 ? clone(mon) : sh));
-  savePlan(n);
-  toast('Horário de segunda copiado');
-};
-ACTIONS.preset = async (_, el) => {
-  const [kind, i] = String(el.value).split(':');
-  const p = kind === 'b' ? PRESETS[Number(i)] : kind === 'c' ? customPlans()[Number(i)] : null;
-  if (!p) return;
-  await savePlan(planFrom(p.plan));
-  toast('Horário aplicado');
-};
-ACTIONS.savePreset = () => {
-  openSheet(`
-    <h3>Salvar como meu modelo</h3>
-    <p class="sub">${esc(scheduleSummary(state.settings))}</p>
-    <label class="field"><span>Nome do modelo</span><input class="input" name="pname" maxlength="40" placeholder="Ex.: Horário de verão, Plantão"></label>
-    <div class="btn-row"><button class="btn" data-close>Cancelar</button><button class="btn primary" data-ok>Salvar</button></div>`, (sh) => {
-    const input = $('[name=pname]', sh);
-    input.focus();
-    $('[data-ok]', sh).addEventListener('click', async () => {
-      const name = input.value.trim();
-      if (!name) return toast('Dê um nome ao modelo');
-      const list = customPlans().filter((p) => p.name !== name);
-      await saveSettings({ customPresets: [...list, { name, plan: clone(plan()) }] });
-      closeSheet();
-      render();
-      toast(`Modelo “${name}” salvo`);
-    });
-  });
-};
-ACTIONS.managePresets = () => {
-  const list = customPlans();
-  openSheet(`
-    <h3>Meus modelos</h3>
-    <div class="reason-list" style="margin-top:12px">${list.map((p, i) => `<div class="reason-item"><span class="grow"><b>${esc(p.name)}</b><br><span class="small muted">${esc(MODE_LABEL[p.plan.mode] || '')}</span></span><button class="link" data-del="${i}" aria-label="Apagar">${icon('trash')}</button></div>`).join('')}</div>
-    <button class="btn block" data-close>Fechar</button>`, (sh) => {
-    $$('[data-del]', sh).forEach((b) => b.addEventListener('click', async () => {
-      const next = customPlans().filter((_, j) => j !== Number(b.dataset.del));
-      await saveSettings({ customPresets: next });
-      closeSheet();
-      render();
-      toast('Modelo apagado');
-    }));
   });
 };
 
