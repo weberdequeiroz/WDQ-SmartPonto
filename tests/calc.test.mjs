@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildDays, buildReport, currentState, summarizeDay, hourBank, dayKey, fmtDur, parseHHMM,
-  weekRange, monthRange, expectedMinutes, scheduleSummary, DEFAULT_SETTINGS, HOUR, MIN,
+  weekRange, monthRange, expectedMinutes, scheduleSummary, dayTemplate, completeWithTemplate, DEFAULT_SETTINGS, HOUR, MIN,
 } from '../web/js/calc.js';
 
 const at = (y, m, d, h, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -136,4 +136,27 @@ test('descanso entre jornadas menor que 11h', () => {
   const punches = [p('in', at(2026, 10, 5, 14)), p('out', at(2026, 10, 5, 23)), p('in', at(2026, 10, 6, 7)), p('out', at(2026, 10, 6, 15))];
   const days = buildDays(punches, at(2026, 10, 7, 9));
   assert.ok(days.get('2026-10-06').issues.some((i) => i.includes('Descanso entre jornadas de 8h00')));
+});
+
+test('modelo do dia a partir da jornada', () => {
+  const s = { ...settings, schedule: [0, 528, 528, 528, 528, 528, 240], workStart: '08:00', mealStart: '12:00', mealMinutes: 60 };
+  const seg = dayTemplate('2026-10-05', s, {}).map((t) => [t.type, new Date(t.ts).getHours(), new Date(t.ts).getMinutes()]);
+  assert.deepEqual(seg, [['in', 8, 0], ['break_start', 12, 0], ['break_end', 13, 0], ['out', 17, 48]]);
+  const sab = dayTemplate('2026-10-10', s, {}).map((t) => [t.type, new Date(t.ts).getHours()]);
+  assert.deepEqual(sab, [['in', 8], ['out', 12]]); // 4h: sem refeição
+  assert.deepEqual(dayTemplate('2026-10-11', s, {}), []); // domingo sem jornada
+  assert.deepEqual(dayTemplate('2026-10-05', s, { '2026-10-05': { occurrence: 'ferias' } }), []);
+  // o modelo preenchido fecha exatamente a jornada
+  const tpl = dayTemplate('2026-10-05', s, {}).map((t, i) => ({ ...t, id: String(i) }));
+  assert.equal(buildDays(tpl, at(2026, 10, 6)).get('2026-10-05').work, 528 * MIN);
+});
+
+test('turno noturno no modelo e completar o que falta', () => {
+  const s = { ...settings, scheduleMode: 'cycle', cycle: { start: '2026-10-05', days: [720, 0] }, workStart: '19:00', mealStart: '12:00', mealMinutes: 60 };
+  const t = dayTemplate('2026-10-05', s, {});
+  assert.equal(new Date(t[1].ts).getHours(), 1); // refeição no meio do turno: 19h + 6h = 01h
+  assert.equal(dayKey(t[3].ts), '2026-10-06'); // saída na manhã seguinte
+  assert.equal(buildDays(t.map((x, i) => ({ ...x, id: String(i) })), at(2026, 10, 7)).get('2026-10-05').work, 720 * MIN);
+  const missing = completeWithTemplate([{ type: 'in', ts: 1 }], t);
+  assert.deepEqual(missing.map((x) => x.type), ['break_start', 'break_end', 'out']);
 });

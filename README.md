@@ -30,6 +30,17 @@ Para publicar o endereço do iPhone: no GitHub, **Settings → Pages → Source:
 
 Também alerta sobre saída não registrada, intervalo menor que 1h em jornada acima de 6h e mais de 10h trabalhadas no dia. Turnos noturnos que passam da meia-noite contam no dia da entrada.
 
+## Esqueceu de marcar? Preencher e corrigir pela jornada
+
+Em **Ajustes → Jornada → Horário padrão**, informe a entrada e a saída para refeição (a saída do dia é calculada pela jornada; jornadas acima de 6h incluem a refeição).
+
+- **Preencher um dia:** no Histórico, toque no dia e em **Preencher com a jornada**. Os horários aparecem para conferir e ajustar antes de confirmar.
+- **Corrigir um dia lançado errado:** no dia, **Corrigir pela jornada** → **Refazer o dia** (substitui tudo) ou **Completar o que falta** (mantém o que foi marcado e acrescenta só o que faltou, como a saída).
+- **Vários dias de uma vez:** a tela inicial avisa quando há dias de trabalho sem marcação, e o Histórico mostra **Preencher N dias sem marcação**. Para cada dia dá para escolher preencher, lançar folga, falta, férias, atestado, feriado, abono ou deixar em branco.
+- **Hoje:** se o dia começou e nada foi marcado, aparece **Esqueceu de marcar? Preencher até agora**.
+
+Tudo pode ser desfeito logo depois, e as marcações ficam identificadas como **preenchidas pela jornada** no histórico, na planilha e com asterisco no espelho de ponto.
+
 ## Alertas do ponto
 
 Opcionais, em Ajustes: lembrar de marcar a entrada, fim do intervalo de refeição, 15 min antes de completar 6h sem intervalo, jornada cumprida e esqueceu de marcar a saída. O app também avisa quando o descanso entre jornadas fica abaixo de 11h.

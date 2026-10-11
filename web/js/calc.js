@@ -226,6 +226,42 @@ export function scheduleSummary(settings) {
 }
 
 /**
+ * Marcações de um dia montadas a partir do horário padrão e da jornada prevista.
+ * Jornada acima de 6h ganha o intervalo de refeição; a saída fecha exatamente a jornada do dia.
+ */
+export function dayTemplate(key, settings, dayInfo) {
+  const exp = expectedMinutes(key, settings, dayInfo);
+  if (exp <= 0) return [];
+  const entry = parseHHMM(settings.workStart || '08:00') ?? 480;
+  const meal = Math.max(0, Number(settings.mealMinutes ?? 60));
+  const base = parseDay(key);
+  const at = (min) => {
+    const d = new Date(base);
+    d.setHours(0, min, 0, 0); // minutos além de 24h caem no dia seguinte (turno noturno)
+    return d.getTime();
+  };
+  if (exp > 360 && meal > 0) {
+    let start = parseHHMM(settings.mealStart || '12:00') ?? 720;
+    // Refeição fora do turno (ex.: turno da noite): vai para o meio da jornada, em hora cheia ou meia hora.
+    if (start <= entry || start >= entry + exp) start = entry + Math.round(exp / 2 / 30) * 30;
+    const after = exp - (start - entry);
+    return [
+      { type: 'in', ts: at(entry) },
+      { type: 'break_start', ts: at(start), reason: 'Refeição' },
+      { type: 'break_end', ts: at(start + meal) },
+      { type: 'out', ts: at(start + meal + after) },
+    ];
+  }
+  return [{ type: 'in', ts: at(entry) }, { type: 'out', ts: at(entry + exp) }];
+}
+
+/** Completa um dia: mantém o que já foi marcado e acrescenta só os tipos que faltam. */
+export function completeWithTemplate(existing, template) {
+  const have = new Set(existing.map((p) => p.type));
+  return template.filter((t) => !have.has(t.type));
+}
+
+/**
  * Resumo de um dia: trabalhado, previsto, saldo (com tolerância), alertas.
  * Dias futuros não geram saldo negativo.
  */
@@ -382,5 +418,8 @@ export const DEFAULT_SETTINGS = {
   alertJourneyDone: true,
   alertForgotOut: true,
   alertStyle: 'notify',
+  // Horário padrão usado para preencher e corrigir dias
+  workStart: '08:00',
+  mealStart: '12:00',
   holidays: true,
 };

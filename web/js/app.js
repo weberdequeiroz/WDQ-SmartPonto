@@ -2,7 +2,7 @@ import {
   PUNCH_TYPES, BREAK_REASONS, OCCURRENCES, WORK_MODES, WEEKDAYS, MONTHS, MIN, HOUR, isPaidBreak,
   buildDays, buildReport, summarizeDay, currentState, hourBank, suggestedNext,
   dayKey, parseDay, addDays, hhmm, fmtDur, fmtClock, fmtDay, fmtDayLong, parseHHMM, minutesToHHMM,
-  weekRange, monthRange, yearRange, plannedMinutes, scheduleSummary,
+  weekRange, monthRange, yearRange, plannedMinutes, scheduleSummary, dayTemplate, completeWithTemplate,
 } from './calc.js';
 import {
   state, openStore, addPunch, updatePunch, deletePunch, saveSettings, setDayInfo,
@@ -19,7 +19,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.2.1';
+export const VERSION = '1.3.0';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -65,6 +65,7 @@ const ICONS = {
   repeat: '<path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/>',
   check: '<path d="M20 6L9 17l-5-5"/>',
   home: '<path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  wand: '<path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8L19 13M17.8 6.2L19 5M3 21l9-9M12.2 6.2L11 5"/>',
 };
 const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
@@ -314,8 +315,8 @@ function timelineHTML(punches) {
       <span class="time">${hhmm(p.ts)}</span>
       <span class="grow">
         <div>${esc(punchLabel(p))}${p.type === 'break_start' && isPaidBreak(p.reason) ? ' <span class="paid-tag">remunerada</span>' : ''}</div>
-        ${p.note || p.manual || p.edited || p.loc ? `<div class="small muted">${[
-          p.manual ? 'manual' : '', p.edited ? 'ajustada' : '', p.loc ? 'com local' : '', esc(p.note || ''),
+        ${p.note || p.manual || p.auto || p.edited || p.loc ? `<div class="small muted">${[
+          p.auto ? 'preenchida pela jornada' : p.manual ? 'manual' : '', p.edited ? 'ajustada' : '', p.loc ? 'com local' : '', esc(p.note || ''),
         ].filter(Boolean).join(' · ')}</div>` : ''}
       </span>
       <button class="link" data-act="editPunch" data-arg="${p.id}" aria-label="Editar">${icon('edit')}</button>
@@ -373,6 +374,7 @@ function renderHome() {
 
   return `
     ${showInstall ? `<div class="banner">${icon('download')}<span>Para instalar no iPhone: toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>.</span></div>` : ''}
+    ${missingBannerHTML()}
     ${needBackup ? `<div class="banner">${icon('shield')}<span>${daysSinceBackup === null ? 'Você ainda não fez backup.' : `Último backup há ${daysSinceBackup} dias.`}</span><button class="btn" data-act="backup">Fazer agora</button></div>` : ''}
 
     <section class="card hero">
@@ -418,9 +420,28 @@ function renderHome() {
         <button class="link" data-act="addPunch" data-arg="${today()}">${icon('plus')}</button>
       </div>
       ${timelineHTML(s.punches)}
+      ${!s.punches.length && dayTemplate(today(), state.settings, state.dayInfo).some((t) => t.ts < now - 30 * MIN) ? `<button class="btn block wand-btn" data-act="fillDay" data-arg="${today()}" style="margin-top:10px">${icon('wand')} Esqueceu de marcar? Preencher até agora</button>` : ''}
       ${s.warnings.length ? `<div class="banner" style="margin:10px 0 0">${icon('warn')}<span>${s.warnings.map(esc).join('<br>')}</span></div>` : ''}
     </section>`;
 }
+
+/** Aviso de dias recentes esquecidos (últimos 14 dias). */
+function missingBannerHTML() {
+  // Só a partir de quando o app começou a ser usado (primeira abertura ou primeira marcação).
+  const first = Math.min(state.meta.createdAt || Date.now(), ...state.punches.map((p) => p.ts));
+  const from = [addDays(today(), -14), dayKey(first)].sort()[1];
+  const blanks = blankWorkdays(from, today());
+  if (blanks.length) {
+    return `<div class="banner info-banner">${icon('wand')}<span>${blanks.length > 1 ? `${blanks.length} dias de trabalho sem marcação` : `${esc(fmtDay(blanks[0], { year: false }))} ficou sem marcação`}</span><button class="btn" data-act="bulkFill" data-arg="${from}|${today()}">Preencher</button></div>`;
+  }
+  const days = buildDays(state.punches);
+  const broken = [...days.entries()].filter(([k, d]) => k >= from && k < today() && d.issues.includes('Saída não registrada')).map(([k]) => k);
+  if (broken.length) {
+    return `<div class="banner info-banner">${icon('warn')}<span>${esc(fmtDay(broken[0], { year: false }))} ficou sem a saída</span><button class="btn" data-act="completeDay" data-arg="${broken[0]}">Completar</button></div>`;
+  }
+  return '';
+}
+ACTIONS.completeDay = (key) => openFillSheet(key, 'complete');
 
 function homeRemindersHTML(now) {
   const next = upcomingAlarms(now, now + 36 * HOUR).filter((a) => a.rid).slice(0, 3);
@@ -472,6 +493,7 @@ function renderHistory() {
   const rep = start <= end ? buildReport(start, end, state.punches, state.settings, state.dayInfo) : { rows: [], totals: { work: 0, balance: 0, daysWorked: 0 } };
   const isCurrent = monthRange(today())[0] === start;
   const rows = [...rep.rows].reverse();
+  const blanks = start <= end ? blankWorkdays(start, end) : [];
   return `
     <div class="pager">
       <button class="icon-btn" data-act="histMonth" data-arg="-1" aria-label="Mês anterior">${icon('left')}</button>
@@ -484,6 +506,7 @@ function renderHistory() {
         <div class="stat"><div class="k">Saldo</div><div class="v ${signCls(rep.totals.balance)}">${fmtDur(rep.totals.balance, { sign: true })}</div></div>
         <div class="stat"><div class="k">Dias</div><div class="v">${rep.totals.daysWorked}</div></div>
       </div>
+      ${blanks.length ? `<button class="btn block wand-btn" style="margin-top:12px" data-act="bulkFill" data-arg="${start}|${end}">${icon('wand')} Preencher ${blanks.length} ${blanks.length > 1 ? 'dias' : 'dia'} sem marcação</button>` : ''}
     </section>
     ${rows.length ? `<ul class="day-list">${rows.map(dayItemHTML).join('')}</ul>` : '<div class="empty">Nada neste mês.</div>'}`;
 }
@@ -526,6 +549,7 @@ function openDay(key) {
     <p class="sub">Trabalhado ${fmtDur(s.work)} · Intervalos ${fmtDur(s.breaks)} · Previsto ${fmtDur(s.expected)} · Saldo <b class="${signCls(s.balance)}">${fmtDur(s.balance, { sign: true })}</b></p>
     ${s.warnings.length ? `<div class="banner">${icon('warn')}<span>${s.warnings.map(esc).join('<br>')}</span></div>` : ''}
     <div class="card" style="box-shadow:none">${timelineHTML(s.punches)}</div>
+    ${dayTemplate(key, state.settings, state.dayInfo).length ? `<button class="btn block wand-btn" data-fill style="margin-bottom:10px">${icon('wand')} ${s.punches.length ? 'Corrigir pela jornada' : 'Preencher com a jornada'}</button>` : ''}
     <button class="btn block" data-add style="margin-bottom:16px">${icon('plus')} Adicionar marcação</button>
     <label class="field"><span>Ocorrência do dia</span>
       <select class="input" name="occ">
@@ -536,6 +560,7 @@ function openDay(key) {
     <label class="field"><span>Observação</span><textarea class="input" name="note" maxlength="500" placeholder="Ex.: reunião externa, compensação…">${esc(info.note || '')}</textarea></label>
     <div class="btn-row"><button class="btn" data-close>Fechar</button><button class="btn primary" data-save>Salvar dia</button></div>`, (sh) => {
     $('[data-add]', sh).addEventListener('click', () => openPunchEditor(null, key));
+    $('[data-fill]', sh)?.addEventListener('click', () => openFillSheet(key));
     $('[data-save]', sh).addEventListener('click', async () => {
       await setDayInfo(key, { occurrence: $('[name=occ]', sh).value || null, note: $('[name=note]', sh).value.trim() });
       closeSheet();
@@ -547,6 +572,235 @@ function openDay(key) {
   $$('[data-act="editPunch"]', sheet).forEach((b) => b.addEventListener('click', () => ACTIONS.editPunch(b.dataset.arg)));
 }
 ACTIONS.openDay = (key) => openDay(key);
+
+// ---------- Preencher e corrigir pela jornada ----------
+const TYPE_DOT = { in: 'Entrada', break_start: 'Saída para refeição', break_end: 'Volta da refeição', out: 'Saída' };
+
+/** Dias de trabalho já passados, sem nenhuma marcação e sem ocorrência. */
+function blankWorkdays(from, to) {
+  const marked = new Set(state.punches.map((p) => dayKey(p.ts)));
+  const out = [];
+  const last = to >= today() ? addDays(today(), -1) : to;
+  for (let k = from; k <= last; k = addDays(k, 1)) {
+    if (state.dayInfo[k]?.occurrence || marked.has(k)) continue;
+    if (dayTemplate(k, state.settings, state.dayInfo).length) out.push(k);
+  }
+  return out;
+}
+
+/** "08:00 · 12:00–13:00 · 17:48" */
+function templateText(tpl) {
+  if (!tpl.length) return 'sem jornada';
+  const t = tpl.map((p) => hhmm(p.ts));
+  return tpl.length === 4 ? `${t[0]} · ${t[1]}–${t[2]} · ${t[3]}` : `${t[0]} – ${t[1]}`;
+}
+
+/** Prévia do horário padrão por dia da semana (ou dia da escala), agrupando dias iguais. */
+function templatePreviewHTML() {
+  const s = state.settings;
+  const start = today();
+  let rows = [];
+  if (s.scheduleMode === 'cycle' && s.cycle?.days?.length) {
+    // Usa as datas reais da próxima repetição da escala.
+    const n = s.cycle.days.length;
+    for (let i = 0; i < Math.min(n, 14); i++) {
+      const k = addDays(start, i);
+      rows.push([fmtDay(k, { year: false }), templateText(dayTemplate(k, s, {}))]);
+    }
+  } else {
+    const monday = addDays(start, (8 - parseDay(start).getDay()) % 7 || 7);
+    const groups = [];
+    for (let i = 0; i < 7; i++) {
+      const k = addDays(monday, i);
+      const text = templateText(dayTemplate(k, s, {}));
+      const wd = WEEKDAYS[parseDay(k).getDay()].slice(0, 3).toLowerCase();
+      const g = groups[groups.length - 1];
+      if (g && g.text === text) g.to = wd; else groups.push({ from: wd, to: wd, text });
+    }
+    const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+    rows = groups.map((g) => [cap(g.from === g.to ? g.from : `${g.from} a ${g.to}`), g.text]);
+  }
+  return `<div class="tpl-preview">${rows.map(([d, t]) => `<div><span>${esc(d)}</span><b class="${t === 'sem jornada' ? 'muted' : ''}">${esc(t)}</b></div>`).join('')}</div>`;
+}
+
+/** Desfazer: remove o que foi criado e devolve o que foi apagado. */
+function undoToast(msg, added, removed) {
+  toast(msg, {
+    label: 'Desfazer',
+    run: async () => {
+      for (const p of added) await deletePunch(p.id);
+      for (const p of removed) await addPunch(p);
+      render();
+      toast('Alteração desfeita');
+    },
+  });
+}
+
+/**
+ * Painel para preencher, completar ou corrigir um dia com o horário padrão.
+ * mode: 'fill' (dia vazio), 'replace' (refaz tudo) ou 'complete' (só o que falta).
+ */
+function openFillSheet(key, preferred) {
+  const now = Date.now();
+  const existing = [...(buildDays(state.punches, now).get(key)?.punches || [])];
+  const tpl = dayTemplate(key, state.settings, state.dayInfo).filter((t) => t.ts <= now);
+  if (!tpl.length) {
+    toast(expectedMinutesOf(key) ? 'Ainda não chegou o horário da jornada' : 'Este dia não tem jornada prevista (veja Ajustes → Jornada)');
+    return;
+  }
+  let mode = existing.length ? (preferred === 'complete' ? 'complete' : 'replace') : 'fill';
+  let rows = [];
+  const base = parseDay(key).getTime();
+
+  const build = () => {
+    rows = (mode === 'complete' ? completeWithTemplate(existing, tpl) : tpl).map((t) => ({ ...t }));
+  };
+  build();
+
+  const result = () => (mode === 'complete' ? [...existing, ...rows] : rows).sort((a, b) => a.ts - b.ts);
+  const summary = () => {
+    const list = result().map((p, i) => ({ ...p, id: p.id || `n${i}` }));
+    const d = summarizeDay(key, buildDays(list, now), state.settings, state.dayInfo, today());
+    return `<span>Trabalhado <b>${fmtDur(d.work)}</b></span><span>Refeição <b>${fmtDur(d.breaks)}</b></span><span>Saldo <b class="${signCls(d.work - d.expected)}">${fmtDur(d.work - d.expected, { sign: true })}</b></span>`;
+  };
+
+  const rowsHTML = () => {
+    const kept = mode === 'complete' ? existing : [];
+    const all = [...kept.map((p) => ({ p, kept: true })), ...rows.map((p, i) => ({ p, i }))].sort((a, b) => a.p.ts - b.p.ts);
+    if (mode === 'complete' && !rows.length) return '<p class="small muted" style="text-align:center">Nada a completar: o dia já tem todas as marcações.</p>';
+    return all.map(({ p, kept, i }) => {
+      const next = dayKey(p.ts) !== key;
+      return `<div class="fill-row ${kept ? 'kept' : ''}">
+        <span class="tag t-${p.type}"></span>
+        <span class="grow"><b>${TYPE_DOT[p.type]}</b>${kept ? '<br><span class="small muted">já marcado</span>' : next ? '<br><span class="small muted">dia seguinte</span>' : ''}</span>
+        ${kept ? `<span class="fill-time">${hhmm(p.ts)}</span>` : `<input class="input fill-time" type="time" data-row="${i}" value="${hhmm(p.ts)}">`}
+      </div>`;
+    }).join('');
+  };
+
+  const title = mode === 'fill' ? 'Preencher com a jornada' : 'Corrigir pela jornada';
+  openSheet(`
+    <div class="fill-head">
+      <span class="fill-ico">${icon('wand')}</span>
+      <div><h3>${title}</h3><p class="sub" style="margin:0">${esc(fmtDayLong(key))}</p></div>
+    </div>
+    ${existing.length ? `<div class="seg" style="margin-top:14px">
+      <button data-mode="replace" class="${mode === 'replace' ? 'active' : ''}">Refazer o dia</button>
+      <button data-mode="complete" class="${mode === 'complete' ? 'active' : ''}">Completar o que falta</button>
+    </div>
+    <p class="small muted" data-mode-hint style="margin:-4px 0 10px"></p>` : '<p class="small muted" style="margin:12px 0 10px">Horários do seu horário padrão. Ajuste algum se precisar.</p>'}
+    <div class="fill-list" data-rows>${rowsHTML()}</div>
+    <div class="fill-sum" data-sum>${summary()}</div>
+    <p class="small muted" style="margin:10px 0 14px">${icon('info')} As marcações ficam identificadas como <b>preenchidas pela jornada</b> no histórico e no espelho de ponto.</p>
+    <div class="btn-row">
+      <button class="btn" data-close>Cancelar</button>
+      <button class="btn primary" data-ok>${icon('check')} Confirmar</button>
+    </div>`, (s) => {
+    const hint = () => {
+      const el = $('[data-mode-hint]', s);
+      if (el) el.textContent = mode === 'replace'
+        ? `Substitui as ${existing.length} marcações do dia pelos horários abaixo.`
+        : 'Mantém o que você marcou e acrescenta só o que faltou.';
+    };
+    const bindRows = () => {
+      $$('[data-row]', s).forEach((el) => el.addEventListener('change', () => {
+        const r = rows[Number(el.dataset.row)];
+        const m = parseHHMM(el.value);
+        if (m === null) return;
+        const offset = dayKey(r.ts) !== key ? 24 * 60 : 0;
+        const d = new Date(base);
+        d.setHours(0, m + offset, 0, 0);
+        r.ts = d.getTime();
+        $('[data-sum]', s).innerHTML = summary();
+      }));
+    };
+    const refresh = () => {
+      $('[data-rows]', s).innerHTML = rowsHTML();
+      $('[data-sum]', s).innerHTML = summary();
+      bindRows();
+      hint();
+    };
+    hint();
+    bindRows();
+    $$('[data-mode]', s).forEach((b) => b.addEventListener('click', () => {
+      mode = b.dataset.mode;
+      $$('[data-mode]', s).forEach((x) => x.classList.toggle('active', x === b));
+      build();
+      refresh();
+    }));
+    $('[data-ok]', s).addEventListener('click', async () => {
+      const list = result();
+      if (!rows.length) { closeSheet(); return; }
+      for (let i = 1; i < list.length; i++) {
+        if (list[i].ts <= list[i - 1].ts) return toast('Os horários precisam estar em ordem');
+      }
+      if (list.some((p) => p.ts > Date.now())) return toast('Não é possível marcar no futuro');
+      const removed = mode === 'replace' ? existing : [];
+      for (const p of removed) await deletePunch(p.id);
+      const added = [];
+      for (const r of rows) added.push(await addPunch({ type: r.type, ts: r.ts, reason: r.reason, auto: true }));
+      closeSheet();
+      render();
+      undoToast(mode === 'replace' ? 'Dia corrigido pela jornada' : mode === 'complete' ? 'Marcações completadas' : 'Dia preenchido pela jornada', added, removed);
+    });
+  });
+}
+const expectedMinutesOf = (key) => dayTemplate(key, state.settings, state.dayInfo).length > 0;
+ACTIONS.fillDay = (key) => openFillSheet(key);
+
+/** Vários dias em branco de uma vez, com a opção de lançar folga, falta etc. em vez de preencher. */
+function openBulkFill(keys, title = 'Dias sem marcação') {
+  if (!keys.length) return toast('Nenhum dia em branco');
+  const choice = Object.fromEntries(keys.map((k) => [k, 'fill']));
+  const OPTIONS = [['fill', 'Preencher com a jornada'], ...Object.entries(OCCURRENCES).map(([k, v]) => [k, v.label]), ['skip', 'Deixar em branco']];
+  openSheet(`
+    <div class="fill-head">
+      <span class="fill-ico">${icon('wand')}</span>
+      <div><h3>${esc(title)}</h3><p class="sub" style="margin:0">${keys.length} ${keys.length > 1 ? 'dias de trabalho sem nenhuma marcação' : 'dia de trabalho sem nenhuma marcação'}</p></div>
+    </div>
+    <div class="bulk-list">
+      ${keys.map((k) => `<div class="bulk-row">
+        <div class="grow"><b>${esc(fmtDay(k, { year: false }))}</b><br><span class="small muted" data-tt="${k}">${templateText(dayTemplate(k, state.settings, state.dayInfo))}</span></div>
+        <select class="input" data-day="${k}">${OPTIONS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select>
+      </div>`).join('')}
+    </div>
+    <p class="small muted" style="margin:10px 0 14px">${icon('info')} Os horários vêm do seu horário padrão (Ajustes → Jornada) e ficam identificados como preenchidos.</p>
+    <div class="btn-row">
+      <button class="btn" data-close>Cancelar</button>
+      <button class="btn primary" data-ok>${icon('check')} <span data-ok-label>Aplicar em ${keys.length} ${keys.length > 1 ? 'dias' : 'dia'}</span></button>
+    </div>`, (s) => {
+    $$('[data-day]', s).forEach((el) => el.addEventListener('change', () => {
+      choice[el.dataset.day] = el.value;
+      $(`[data-tt="${el.dataset.day}"]`, s).textContent = el.value === 'fill'
+        ? templateText(dayTemplate(el.dataset.day, state.settings, state.dayInfo))
+        : el.value === 'skip' ? 'sem alteração' : OCCURRENCES[el.value].label;
+      const n = Object.values(choice).filter((v) => v !== 'skip').length;
+      $('[data-ok-label]', s).textContent = `Aplicar em ${n} ${n === 1 ? 'dia' : 'dias'}`;
+    }));
+    $('[data-ok]', s).addEventListener('click', async () => {
+      const added = [];
+      let filled = 0; let marked = 0;
+      for (const k of keys) {
+        const c = choice[k];
+        if (c === 'fill') {
+          for (const t of dayTemplate(k, state.settings, state.dayInfo)) added.push(await addPunch({ type: t.type, ts: t.ts, reason: t.reason, auto: true }));
+          filled++;
+        } else if (c !== 'skip') {
+          await setDayInfo(k, { ...(state.dayInfo[k] || {}), occurrence: c });
+          marked++;
+        }
+      }
+      closeSheet();
+      render();
+      const msg = [filled ? `${filled} ${filled > 1 ? 'dias preenchidos' : 'dia preenchido'}` : '', marked ? `${marked} com ocorrência` : ''].filter(Boolean).join(' · ') || 'Nada alterado';
+      if (added.length) undoToast(msg, added, []); else toast(msg);
+    });
+  });
+}
+ACTIONS.bulkFill = (range) => {
+  const [a, b] = range.split('|');
+  openBulkFill(blankWorkdays(a, b));
+};
 
 // ---------- Tela: Relatórios ----------
 const REPORT_MODES = { day: 'Dia', week: 'Semana', month: 'Mês', year: 'Ano', custom: 'Período' };
@@ -763,14 +1017,14 @@ ACTIONS.repPdf = () => {
       <thead><tr><th>Data</th>${Array.from({ length: cols }, (_, i) => `<th>${i % 2 ? 'Saída' : 'Entrada'} ${Math.floor(i / 2) + 1}</th>`).join('')}<th>Interv.</th><th>Trab.</th><th>Prev.</th><th>Saldo</th><th>Ocorrência / obs.</th></tr></thead>
       <tbody>${rep.rows.filter((r) => !r.future).map((r) => `<tr>
         <td>${fmtDay(r.key)}</td>
-        ${Array.from({ length: cols }, (_, i) => `<td>${r.punches[i] ? hhmm(r.punches[i].ts) + (r.punches[i].manual || r.punches[i].edited ? '*' : '') : ''}</td>`).join('')}
+        ${Array.from({ length: cols }, (_, i) => `<td>${r.punches[i] ? hhmm(r.punches[i].ts) + (r.punches[i].manual || r.punches[i].auto || r.punches[i].edited ? '*' : '') : ''}</td>`).join('')}
         <td>${r.breaks ? fmtClock(r.breaks) : ''}</td><td>${r.work ? fmtClock(r.work) : ''}</td><td>${r.expected ? fmtClock(r.expected) : ''}</td>
         <td>${r.balance ? fmtClock(r.balance) : ''}</td>
         <td>${esc([r.occurrence ? OCCURRENCES[r.occurrence].label : '', r.note, ...r.warnings].filter(Boolean).join('; '))}</td></tr>`).join('')}</tbody>
       <tfoot><tr><td>Total</td>${'<td></td>'.repeat(cols)}<td>${fmtClock(t.breaks)}</td><td>${fmtClock(t.work)}</td><td>${fmtClock(t.expected)}</td><td>${fmtClock(t.balance)}</td><td></td></tr></tfoot>
     </table>
     <div class="p-sign"><div>${esc(s.name || 'Colaborador')}</div><div>Responsável</div></div>
-    <div class="p-foot">* marcação inserida ou ajustada manualmente. Relatório de controle pessoal gerado pelo WDQ SmartPonto; não substitui o registro oficial do empregador.</div>`;
+    <div class="p-foot">* marcação inserida manualmente, preenchida pela jornada ou ajustada. Relatório de controle pessoal gerado pelo WDQ SmartPonto; não substitui o registro oficial do empregador.</div>`;
   printPage(`Espelho de ponto ${fileStamp(range)}`);
 };
 
@@ -861,6 +1115,18 @@ function jornadaHTML(s) {
     </label>
     ${body}
     <p style="margin:10px 0 0"><b data-sched-summary>${esc(scheduleSummary(s))}</b></p>
+    <div class="std-hours">
+      <h3>Horário padrão</h3>
+      <p class="small muted" style="margin:0 0 10px">Usado para preencher dias esquecidos e corrigir dias lançados errado. A saída é calculada pela jornada de cada dia; jornadas acima de 6h incluem a refeição.</p>
+      <div class="grid-3">
+        <label class="field"><span>Entrada</span><input class="input" type="time" data-set="workStart" value="${esc(s.workStart || '08:00')}"></label>
+        <label class="field"><span>Saída p/ refeição</span><input class="input" type="time" data-set="mealStart" value="${esc(s.mealStart || '12:00')}"></label>
+        <label class="field"><span>Refeição</span>
+          <select class="input" data-set="mealMinutes">${[15, 20, 30, 45, 60, 75, 90, 120].map((m) => `<option value="${m}" ${Number(s.mealMinutes) === m ? 'selected' : ''}>${m >= 60 ? fmtDur(m * MIN) : `${m} min`}</option>`).join('')}</select>
+        </label>
+      </div>
+      <div data-tpl-preview>${templatePreviewHTML()}</div>
+    </div>
     <button class="btn block" data-act="savePreset" style="margin-top:12px">${icon('plus')} Salvar como meu modelo</button>
     ${custom.length ? `<div class="chips" style="margin-top:12px">${custom.map((p, i) => `<span class="chip">${esc(p.name)}<button class="link" style="padding:0 0 0 4px" data-act="delPreset" data-arg="${i}" aria-label="Apagar modelo ${esc(p.name)}">✕</button></span>`).join('')}</div>` : ''}`;
 }
@@ -906,10 +1172,7 @@ function renderSettings() {
       <p class="small muted" style="margin-top:0">Avisos automáticos conforme suas marcações${isAndroidApp ? ', inclusive com o app fechado' : ' (com o app aberto)'}.</p>
       <label class="switch"><span><b>Lembrar de marcar a entrada</b><br><span class="small muted">Nos dias de jornada, se ainda não marcou</span></span><input type="checkbox" data-set="alertEntry" ${s.alertEntry ? 'checked' : ''}></label>
       <label class="field" style="margin:8px 0 4px"><span>Horário do lembrete de entrada</span><input class="input" type="time" data-set="alertEntryTime" value="${esc(s.alertEntryTime)}"></label>
-      <label class="switch"><span><b>Fim do intervalo de refeição</b><br><span class="small muted">Avisa quando completar o tempo de refeição</span></span><input type="checkbox" data-set="alertMealEnd" ${s.alertMealEnd ? 'checked' : ''}></label>
-      <label class="field" style="margin:8px 0 4px"><span>Duração da refeição</span>
-        <select class="input" data-set="mealMinutes">${[15, 20, 30, 45, 60, 75, 90, 120].map((m) => `<option value="${m}" ${Number(s.mealMinutes) === m ? 'selected' : ''}>${m >= 60 ? fmtDur(m * MIN) : `${m} min`}</option>`).join('')}</select>
-      </label>
+      <label class="switch"><span><b>Fim do intervalo de refeição</b><br><span class="small muted">Avisa ao completar ${fmtDur((s.mealMinutes || 60) * MIN)} de refeição (duração em Jornada)</span></span><input type="checkbox" data-set="alertMealEnd" ${s.alertMealEnd ? 'checked' : ''}></label>
       <label class="switch"><span><b>6 horas sem intervalo</b><br><span class="small muted">Avisa 15 min antes de completar 6h sem refeição</span></span><input type="checkbox" data-set="alertNoBreak" ${s.alertNoBreak ? 'checked' : ''}></label>
       <label class="switch"><span><b>Jornada cumprida</b><br><span class="small muted">Avisa na hora de sair</span></span><input type="checkbox" data-set="alertJourneyDone" ${s.alertJourneyDone ? 'checked' : ''}></label>
       <label class="switch"><span><b>Esqueceu a saída?</b><br><span class="small muted">2h depois do fim da jornada sem saída</span></span><input type="checkbox" data-set="alertForgotOut" ${s.alertForgotOut ? 'checked' : ''}></label>
@@ -973,6 +1236,7 @@ VIEWS.settings.mount = () => {
       }
       await saveSettings({ [key]: v });
       if (key === 'theme') applyTheme();
+      if (['workStart', 'mealStart', 'mealMinutes'].includes(key)) $('[data-tpl-preview]').innerHTML = templatePreviewHTML();
       syncAlarms();
     });
   });
@@ -987,6 +1251,7 @@ VIEWS.settings.mount = () => {
     el.value = minutesToHHMM(m);
     await save(m);
     $('[data-sched-summary]').textContent = scheduleSummary(state.settings);
+    $('[data-tpl-preview]').innerHTML = templatePreviewHTML();
   });
   $$('[data-sched]').forEach((el) => onDur(el, () => state.settings.schedule[Number(el.dataset.sched)], async (m) => {
     const schedule = [...state.settings.schedule];
@@ -1119,7 +1384,7 @@ async function onRestoreFile(e) {
 ACTIONS.exportAll = async () => {
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const rows = state.punches.map((p) => [fmtDay(dayKey(p.ts), { weekday: false }), hhmm(p.ts), PUNCH_TYPES[p.type].label,
-    p.reason || '', p.manual ? 'manual' : p.edited ? 'ajustada' : '', p.note || '', p.loc ? `${p.loc.lat},${p.loc.lng}` : ''].map(q).join(';'));
+    p.reason || '', p.auto ? 'preenchida pela jornada' : p.manual ? 'manual' : p.edited ? 'ajustada' : '', p.note || '', p.loc ? `${p.loc.lat},${p.loc.lng}` : ''].map(q).join(';'));
   const csv = `﻿${['Data', 'Hora', 'Tipo', 'Motivo', 'Origem', 'Observação', 'Local'].map(q).join(';')}\n${rows.join('\n')}\n`;
   await shareFile(`smartponto-marcacoes-${today()}.csv`, 'text/csv', csv);
 };
@@ -1495,12 +1760,19 @@ function onboarding() {
     <label class="field"><span>Sua jornada</span>
       <select class="input" name="preset">${presetOptions('b:0')}<option value="custom">Outra: vou montar a minha</option></select>
     </label>
+    <div class="grid-2">
+      <label class="field"><span>Costumo entrar às</span><input class="input" type="time" name="workStart" value="08:00"></label>
+      <label class="field"><span>Saio para refeição às</span><input class="input" type="time" name="mealStart" value="12:00"></label>
+    </div>
     <p class="small muted">Dá para ajustar as horas de cada dia ou montar uma escala própria em Ajustes.</p>
     <button class="btn primary block" data-go>Começar</button>`, (s) => {
     $('[data-go]', s).addEventListener('click', async () => {
       const choice = $('[name=preset]', s).value;
       const p = presetByValue(choice);
-      await saveSettings({ name: $('[name=name]', s).value.trim(), ...(p ? presetChanges(p) : {}), onboarded: true });
+      await saveSettings({
+        name: $('[name=name]', s).value.trim(), ...(p ? presetChanges(p) : {}), onboarded: true,
+        workStart: $('[name=workStart]', s).value || '08:00', mealStart: $('[name=mealStart]', s).value || '12:00',
+      });
       closeSheet();
       if (choice === 'custom') {
         go('settings');
