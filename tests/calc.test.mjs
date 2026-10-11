@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildDays, buildReport, currentState, summarizeDay, hourBank, dayKey, fmtDur, parseHHMM,
-  weekRange, monthRange, expectedMinutes, scheduleSummary, dayTemplate, completeWithTemplate, DEFAULT_SETTINGS, HOUR, MIN,
+  weekRange, monthRange, expectedMinutes, scheduleSummary, dayTemplate, completeWithTemplate, shiftMinutes, migrateWorkPlan, hhmm, DEFAULT_SETTINGS, HOUR, MIN,
 } from '../web/js/calc.js';
 
 const at = (y, m, d, h, min = 0) => new Date(y, m - 1, d, h, min).getTime();
@@ -165,4 +165,36 @@ test('turno noturno no modelo e completar o que falta', () => {
   assert.equal(buildDays(t.map((x, i) => ({ ...x, id: String(i) })), at(2026, 10, 7)).get('2026-10-05').work, 720 * MIN);
   const missing = completeWithTemplate([{ type: 'in', ts: 1 }], t);
   assert.deepEqual(missing.map((x) => x.type), ['break_start', 'break_end', 'out']);
+});
+
+test('horário de trabalho por relógio', () => {
+  const sh = { in: '10:00', bs: '14:00', be: '15:00', out: '18:20' };
+  const wp = { mode: 'cycle', cycle: { start: '2026-10-01', pattern: [true, true, true, true, true, true, false], shift: sh } };
+  const s = { ...settings, workPlan: wp };
+  assert.equal(shiftMinutes(sh), 440);
+  assert.equal(expectedMinutes('2026-10-03', s, {}), 440);
+  assert.equal(expectedMinutes('2026-10-07', s, {}), 0); // 7º dia da escala: folga
+  assert.equal(dayTemplate('2026-10-03', s, {}).map((t) => hhmm(t.ts)).join(' '), '10:00 14:00 15:00 18:20');
+  assert.match(scheduleSummary(s), /^7h20 por dia de trabalho · escala de 7 dias \(6 de trabalho, 1 de folga\) · média de 44h00 por semana$/);
+  // turno noturno e sem almoço
+  assert.equal(shiftMinutes({ in: '22:00', bs: '02:00', be: '03:00', out: '07:00' }), 8 * 60);
+  assert.equal(shiftMinutes({ in: '07:00', bs: '', be: '', out: '07:00' }), 24 * 60);
+  const perday = { ...settings, workPlan: { mode: 'perday', perDay: [null, sh, sh, sh, sh, sh, { in: '08:00', bs: '', be: '', out: '12:00' }] } };
+  assert.equal(dayTemplate('2026-10-10', perday, {}).map((t) => hhmm(t.ts)).join(' '), '08:00 12:00');
+  assert.equal(scheduleSummary(perday), '40h40 por semana');
+});
+
+test('conversão da configuração antiga', () => {
+  const old = { ...settings, scheduleMode: 'cycle', cycle: { start: '2026-10-01', days: [440, 440, 440, 440, 440, 440, 0] }, workStart: '10:00', mealStart: '14:00', mealMinutes: 60 };
+  const wp = migrateWorkPlan(old);
+  assert.equal(wp.mode, 'cycle');
+  assert.deepEqual(wp.cycle.shift, { in: '10:00', bs: '14:00', be: '15:00', out: '18:20' });
+  assert.deepEqual(wp.cycle.pattern, [true, true, true, true, true, true, false]);
+  const wk = migrateWorkPlan({ ...settings, schedule: [0, 480, 480, 480, 480, 480, 240], workStart: '08:00', mealStart: '12:00', mealMinutes: 60, shortBreak: 'clt' });
+  assert.equal(wk.mode, 'perday');
+  assert.deepEqual(wk.perDay[6], { in: '08:00', bs: '', be: '', out: '12:00' });
+  assert.deepEqual(wk.perDay[1], { in: '08:00', bs: '12:00', be: '13:00', out: '17:00' });
+  const same = migrateWorkPlan({ ...settings });
+  assert.equal(same.mode, 'same');
+  assert.deepEqual(same.days, [1, 2, 3, 4, 5]);
 });

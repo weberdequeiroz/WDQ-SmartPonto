@@ -26,18 +26,27 @@ Para publicar o endereço do iPhone: no GitHub, **Settings → Pages → Source:
 | **Histórico** | Mês a mês, cada dia com seus horários e saldo. Toque no dia para corrigir, incluir marcação esquecida ou lançar **folga, feriado, férias, atestado, abono ou falta**. |
 | **Lembretes** | Crie lembretes do dia a dia de trabalho com **alarme em tela cheia** (som contínuo, aparece na tela bloqueada, botões Concluir e Adiar 5/10/30 min) ou **notificação**. Repetição: uma vez, todo dia, dias da semana, a cada N dias/semanas/meses, de tempo em tempo no dia (ex.: a cada 1h das 9h às 18h), dia fixo do mês (com opção de antecipar ou adiar se cair em fim de semana ou feriado), N-ésimo dia útil do mês (1º, 5º, último…), N-ésimo dia da semana do mês (ex.: 2ª segunda, última sexta) e todo ano. Opções: só em dias úteis, só nos dias da jornada, aviso antecipado e data final. Mostra as próximas datas antes de salvar e exporta para a agenda (.ics). |
 | **Relatórios** | Dia, semana, mês, ano ou período livre: trabalhado, previsto, saldo, horas extras, débito, média por dia, faltas e abonos, gráfico e tabela. Exporta **PDF** (espelho de ponto com campos de assinatura), **planilha CSV** (Excel / Google Planilhas) e **resumo em texto**. |
-| **Ajustes** | Nome, empresa, cargo e matrícula; jornada livre: horas de cada dia da semana ou escala de revezamento (12x36, 24x48, 6x1, 5x1, 4x2 ou qualquer sequência montada por você), com seus próprios modelos salvos; tolerância diária (padrão de 10 min, CLT art. 58 §1º); saldo inicial do banco de horas; confirmação antes de marcar; localização opcional; tema claro/escuro; backup. |
+| **Ajustes** | Nome, empresa, cargo e matrícula; horário de trabalho por relógio (todo dia igual, por dia da semana ou escala 6x1, 12x36, 24x48…), com modelos prontos e seus próprios modelos; tolerância diária (padrão de 10 min, CLT art. 58 §1º); saldo inicial do banco de horas; confirmação antes de marcar; localização opcional; tema claro/escuro; backup. |
 
 Também alerta sobre saída não registrada, intervalo menor que 1h em jornada acima de 6h e mais de 10h trabalhadas no dia. Turnos noturnos que passam da meia-noite contam no dia da entrada.
 
+## Meu horário de trabalho
+
+Em **Ajustes → Meu horário de trabalho**, a pessoa informa só os horários de relógio (entrada, saída e volta do almoço, saída) e o app calcula as horas do dia e da semana. Três formas:
+
+- **Todo dia igual:** marca os dias da semana e informa um horário.
+- **Por dia:** cada dia da semana com o seu horário (ex.: sábado só de manhã). Toque no dia para editar e, se quiser, aplicar o mesmo horário em outros dias.
+- **Escala:** primeiro dia, sequência de trabalho/folga (6x1, 12x36, 24x48…) e o horário dos dias de trabalho.
+
+Há modelos prontos e dá para salvar os seus. Um resumo mostra as horas por dia e por semana e os próximos 7 dias. Configurações antigas (horas por dia) são convertidas automaticamente.
+
 ## Esqueceu de marcar? Preencher e corrigir pela jornada
 
-Em **Ajustes → Jornada → Horário padrão**, informe a entrada e a saída para refeição (a saída do dia é calculada pela jornada; jornadas acima de 6h incluem a refeição).
+Os horários vêm de **Meu horário de trabalho**.
 
 - **Preencher um dia:** no Histórico, toque no dia e em **Preencher com a jornada**. Os horários aparecem para conferir e ajustar antes de confirmar.
 - **Corrigir um dia lançado errado:** no dia, **Corrigir pela jornada** → **Refazer o dia** (substitui tudo) ou **Completar o que falta** (mantém o que foi marcado e acrescenta só o que faltou, como a saída).
 - **Selecionar dias:** no Histórico, toque em **Selecionar dias**, marque os dias que quiser (ou use os atalhos *Dias em branco* e *Todos os dias de trabalho*) e toque em **Preencher pela jornada**. Dias vazios são preenchidos; dias com marcações podem ser refeitos ou completados.
-- **Intervalo:** jornadas acima de 6h sempre têm a refeição. Para jornadas menores (ex.: sábado de 4h), escolha em Ajustes: usar a mesma refeição (padrão), seguir a CLT (15 min acima de 4h) ou sem intervalo. No painel de preenchimento há uma chave para incluir ou tirar o intervalo naquele momento.
 - **Vários dias de uma vez:** a tela inicial avisa quando há dias de trabalho sem marcação, e o Histórico mostra **Preencher N dias sem marcação**. Para cada dia dá para escolher preencher, lançar folga, falta, férias, atestado, feriado, abono ou deixar em branco.
 - **Hoje:** se o dia começou e nada foi marcado, aparece **Esqueceu de marcar? Preencher até agora**.
 

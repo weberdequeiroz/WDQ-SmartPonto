@@ -3,7 +3,7 @@
 // No navegador / iPhone, os avisos disparam com o app aberto; para avisar com ele fechado, o app exporta para a agenda.
 import { state } from './store.js';
 import {
-  MIN, HOUR, dayKey, parseDay, addDays, hhmm, fmtDur, parseHHMM, currentState, buildDays, expectedMinutes,
+  MIN, HOUR, dayKey, parseDay, addDays, hhmm, fmtDur, parseHHMM, currentState, buildDays, expectedMinutes, shiftFor, shiftBreak,
 } from './calc.js';
 import { occurrences, describe } from './reminders.js';
 import { isAndroidApp, nativeSetAlarms } from './platform.js';
@@ -30,10 +30,11 @@ export function autoAlerts(now = Date.now()) {
   const today = dayKey(now);
 
   if (s.alertEntry) {
-    const min = parseHHMM(s.alertEntryTime || '08:00') ?? 480;
     for (let i = 0; i < 14; i++) {
       const key = addDays(today, i);
       if (expectedMinutes(key, s, state.dayInfo) <= 0) continue;
+      // 5 minutos depois do horário de entrada daquele dia.
+      const min = (parseHHMM(shiftFor(key, s)?.in || '08:00') ?? 480) + 5;
       if (i === 0 && (st.state !== 'off' || state.punches.some((p) => p.type === 'in' && dayKey(p.ts) === key))) continue;
       const at = parseDay(key).getTime() + min * MIN;
       if (at > now) out.push({ id: `auto:entry:${key}`, at, title: 'Marcar a entrada', body: 'Você ainda não registrou a entrada hoje.', style });
@@ -41,7 +42,8 @@ export function autoAlerts(now = Date.now()) {
   }
 
   if (st.state === 'break' && s.alertMealEnd && st.last?.reason === 'Refeição') {
-    const meal = (s.mealMinutes || 60) * MIN;
+    const b = shiftBreak(shiftFor(st.day, s));
+    const meal = (b ? b.end - b.start : 60) * MIN;
     const at = st.since + meal;
     if (at > now) {
       out.push({ id: `auto:meal:${st.since}`, at, title: 'Fim do intervalo de refeição', body: `${fmtDur(meal)} desde ${hhmm(st.since)}. Hora de marcar o retorno.`, style });

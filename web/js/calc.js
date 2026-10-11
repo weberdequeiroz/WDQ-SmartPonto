@@ -203,6 +203,7 @@ export function expectedMinutes(key, settings, dayInfo) {
 
 /** Jornada da escala para o dia, sem considerar ocorrências. */
 export function plannedMinutes(key, settings) {
+  if (settings.workPlan) return shiftMinutes(shiftFor(key, settings));
   const cycle = settings.cycle;
   if (settings.scheduleMode === 'cycle' && cycle?.days?.length && cycle.start) {
     // Escala de revezamento (12x36, 6x1…): repete a sequência de dias a partir da data inicial.
@@ -213,8 +214,102 @@ export function plannedMinutes(key, settings) {
   return settings.schedule?.[parseDay(key).getDay()] ?? 0;
 }
 
+// ---------- Horário de trabalho (por horários de relógio) ----------
+// settings.workPlan = {
+//   mode: 'same' (mesmo horário nos dias marcados) | 'perday' (um horário por dia da semana) | 'cycle' (escala),
+//   days: [1..5], shift: { in, bs, be, out },       // 'same'
+//   perDay: [shift | null] x7 (domingo = 0),         // 'perday'
+//   cycle: { start: 'AAAA-MM-DD', pattern: [true, false…], shift },  // 'cycle': true = dia de trabalho
+// }
+// shift: entrada, saída e volta do almoço, saída ('HH:MM'). bs/be vazios = sem intervalo. Saída menor que a entrada = dia seguinte.
+
+/** Minutos trabalhados num turno (descontando o almoço). */
+export function shiftMinutes(sh) {
+  if (!sh) return 0;
+  const a = parseHHMM(sh.in || '');
+  let b = parseHHMM(sh.out || '');
+  if (a === null || b === null) return 0;
+  while (b <= a) b += 1440;
+  let total = b - a;
+  const pause = shiftBreak(sh);
+  if (pause) total -= pause.end - pause.start;
+  return Math.max(0, total);
+}
+
+/** Almoço em minutos a partir da meia-noite do dia da entrada, ou null. */
+export function shiftBreak(sh) {
+  const a = parseHHMM(sh?.in || '');
+  let s = parseHHMM(sh?.bs || '');
+  let e = parseHHMM(sh?.be || '');
+  if (a === null || s === null || e === null) return null;
+  while (s < a) s += 1440;
+  while (e <= s) e += 1440;
+  let out = parseHHMM(sh.out || '');
+  if (out !== null) { while (out <= a) out += 1440; if (e > out) return null; }
+  return { start: s, end: e };
+}
+
+/** Turno de um dia, ou null se for folga. */
+export function shiftFor(key, settings) {
+  const wp = settings.workPlan;
+  if (!wp) return null;
+  const wd = parseDay(key).getDay();
+  if (wp.mode === 'cycle') {
+    const c = wp.cycle;
+    if (!c?.pattern?.length || !c.start) return null;
+    const n = c.pattern.length;
+    const diff = Math.round((parseDay(key) - parseDay(c.start)) / (24 * HOUR));
+    return c.pattern[((diff % n) + n) % n] ? c.shift : null;
+  }
+  if (wp.mode === 'perday') return wp.perDay?.[wd] || null;
+  return (wp.days || []).includes(wd) ? wp.shift : null;
+}
+
+/** "10:00–18:20 · almoço 14:00–15:00" */
+export function shiftText(sh) {
+  if (!sh) return 'Folga';
+  return shiftBreak(sh) ? `${sh.in}–${sh.out} · almoço ${sh.bs}–${sh.be}` : `${sh.in}–${sh.out}`;
+}
+
+/** Converte a configuração antiga (horas por dia + horário padrão) para horários de relógio. */
+export function migrateWorkPlan(s) {
+  const toShift = (min) => {
+    if (!min) return null;
+    const entry = parseHHMM(s.workStart || '08:00') ?? 480;
+    const pause = breakMinutes(min, s);
+    const hm = (m) => minutesToHHMM(((m % 1440) + 1440) % 1440);
+    if (!pause) return { in: hm(entry), bs: '', be: '', out: hm(entry + min) };
+    let start = parseHHMM(s.mealStart || '12:00') ?? 720;
+    if (start <= entry || start >= entry + min) start = entry + Math.max(30, Math.round(min / 2 / 30) * 30);
+    return { in: hm(entry), bs: hm(start), be: hm(start + pause), out: hm(entry + min + pause) };
+  };
+  const base = { mode: 'same', days: [1, 2, 3, 4, 5], shift: toShift(480), perDay: [null, null, null, null, null, null, null], cycle: { start: '', pattern: [true, false], shift: toShift(720) } };
+  if (s.scheduleMode === 'cycle' && s.cycle?.days?.length) {
+    const first = s.cycle.days.find((m) => m > 0) || 480;
+    return { ...base, mode: 'cycle', cycle: { start: s.cycle.start || '', pattern: s.cycle.days.map((m) => m > 0), shift: toShift(first) } };
+  }
+  const sched = s.schedule || [0, 480, 480, 480, 480, 480, 0];
+  const perDay = sched.map(toShift);
+  const work = perDay.map((x, i) => (x ? i : -1)).filter((i) => i >= 0);
+  const same = work.every((i) => JSON.stringify(perDay[i]) === JSON.stringify(perDay[work[0]]));
+  if (work.length && same) return { ...base, mode: 'same', days: work, shift: perDay[work[0]], perDay };
+  return { ...base, mode: 'perday', perDay, shift: perDay[work[0]] || base.shift, days: work };
+}
+
 /** Texto curto da jornada configurada: "44h semanais" ou "Escala 12x36". */
 export function scheduleSummary(settings) {
+  const wp = settings.workPlan;
+  if (wp) {
+    if (wp.mode === 'cycle') {
+      const p = wp.cycle?.pattern || [];
+      const work = p.filter(Boolean).length;
+      const avg = p.length ? (work * shiftMinutes(wp.cycle.shift) / p.length) * 7 : 0;
+      return `${fmtDur(shiftMinutes(wp.cycle?.shift) * MIN)} por dia de trabalho · escala de ${p.length} dias (${work} de trabalho, ${p.length - work} de folga) · média de ${fmtDur(avg * MIN)} por semana`;
+    }
+    let week = 0;
+    for (let wd = 0; wd < 7; wd++) week += shiftMinutes(wp.mode === 'perday' ? wp.perDay?.[wd] : (wp.days || []).includes(wd) ? wp.shift : null);
+    return `${fmtDur(week * MIN)} por semana`;
+  }
   if (settings.scheduleMode === 'cycle' && settings.cycle?.days?.length) {
     const days = settings.cycle.days;
     const work = days.filter((m) => m > 0).length;
@@ -232,6 +327,19 @@ export function scheduleSummary(settings) {
 export function dayTemplate(key, settings, dayInfo, opts = {}) {
   const exp = expectedMinutes(key, settings, dayInfo);
   if (exp <= 0) return [];
+  if (settings.workPlan) {
+    const sh = shiftFor(key, settings);
+    const a = parseHHMM(sh.in);
+    const at = (min) => { const d = parseDay(key); d.setHours(0, min, 0, 0); return d.getTime(); };
+    const pause = opts.withBreak === false ? null : shiftBreak(sh);
+    if (!pause) return [{ type: 'in', ts: at(a) }, { type: 'out', ts: at(a + exp) }];
+    return [
+      { type: 'in', ts: at(a) },
+      { type: 'break_start', ts: at(pause.start), reason: 'Refeição' },
+      { type: 'break_end', ts: at(pause.end) },
+      { type: 'out', ts: at(a + exp + (pause.end - pause.start)) },
+    ];
+  }
   const entry = parseHHMM(settings.workStart || '08:00') ?? 480;
   const pause = breakMinutes(exp, settings, opts.withBreak);
   const base = parseDay(key);

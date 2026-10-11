@@ -1,5 +1,5 @@
 // Armazenamento local em IndexedDB. Tudo fica no aparelho; nada é enviado a servidores.
-import { DEFAULT_SETTINGS } from './calc.js';
+import { DEFAULT_SETTINGS, migrateWorkPlan } from './calc.js';
 
 const DB_NAME = 'wdq-smartponto';
 const DB_VERSION = 1;
@@ -31,6 +31,11 @@ function tx(stores, mode = 'readonly') {
   return { t, done };
 }
 
+/** Garante o horário de trabalho por relógio (converte a configuração antiga). */
+function withPlan(settings) {
+  return settings.workPlan ? settings : { ...settings, workPlan: migrateWorkPlan(settings) };
+}
+
 export async function openStore() {
   db = await new Promise((resolve, reject) => {
     const r = indexedDB.open(DB_NAME, DB_VERSION);
@@ -52,7 +57,7 @@ export async function openStore() {
   ]);
   state.reminders = reminders || [];
   state.punches = punches.sort((a, b) => a.ts - b.ts);
-  state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  state.settings = withPlan({ ...DEFAULT_SETTINGS, ...(settings || {}) });
   state.dayInfo = dayInfo || {};
   state.meta = { lastBackup: null, createdAt: Date.now(), ...(meta || {}) };
   if (!meta) await putKV('meta', state.meta);
@@ -149,7 +154,7 @@ export async function importBackup(data, mode = 'merge') {
   const ps = t.objectStore('punches');
   if (mode === 'replace') ps.clear();
   valid.forEach((p) => ps.put(p));
-  const settings = mode === 'replace' ? { ...DEFAULT_SETTINGS, ...data.settings } : state.settings;
+  const settings = mode === 'replace' ? withPlan({ ...DEFAULT_SETTINGS, ...data.settings }) : state.settings;
   const dayInfo = mode === 'replace' ? (data.dayInfo || {}) : { ...(data.dayInfo || {}), ...state.dayInfo };
   t.objectStore('kv').put(settings, 'settings');
   t.objectStore('kv').put(dayInfo, 'dayInfo');
@@ -183,7 +188,7 @@ export async function wipeAll() {
   t.objectStore('kv').clear();
   await done;
   state.punches = [];
-  state.settings = { ...DEFAULT_SETTINGS };
+  state.settings = withPlan({ ...DEFAULT_SETTINGS });
   state.dayInfo = {};
   state.reminders = [];
   state.meta = { lastBackup: null, createdAt: Date.now() };
