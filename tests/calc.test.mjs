@@ -142,8 +142,14 @@ test('modelo do dia a partir da jornada', () => {
   const s = { ...settings, schedule: [0, 528, 528, 528, 528, 528, 240], workStart: '08:00', mealStart: '12:00', mealMinutes: 60 };
   const seg = dayTemplate('2026-10-05', s, {}).map((t) => [t.type, new Date(t.ts).getHours(), new Date(t.ts).getMinutes()]);
   assert.deepEqual(seg, [['in', 8, 0], ['break_start', 12, 0], ['break_end', 13, 0], ['out', 17, 48]]);
+  // Sábado de 4h: por padrão também tem a refeição salva (no meio da jornada, pois 12h é o fim do turno)
   const sab = dayTemplate('2026-10-10', s, {}).map((t) => [t.type, new Date(t.ts).getHours()]);
-  assert.deepEqual(sab, [['in', 8], ['out', 12]]); // 4h: sem refeição
+  assert.deepEqual(sab, [['in', 8], ['break_start', 10], ['break_end', 11], ['out', 13]]);
+  const clt = dayTemplate('2026-10-10', { ...s, shortBreak: 'clt' }, {}).map((t) => [t.type, new Date(t.ts).getHours()]);
+  assert.deepEqual(clt, [['in', 8], ['out', 12]]); // CLT: até 4h sem intervalo
+  const clt5 = dayTemplate('2026-10-10', { ...s, shortBreak: 'clt', schedule: [0, 0, 0, 0, 0, 0, 300] }, {});
+  assert.equal(clt5[2].ts - clt5[1].ts, 15 * MIN); // 5h: 15 min
+  assert.equal(dayTemplate('2026-10-05', s, {}, { withBreak: false }).length, 2);
   assert.deepEqual(dayTemplate('2026-10-11', s, {}), []); // domingo sem jornada
   assert.deepEqual(dayTemplate('2026-10-05', s, { '2026-10-05': { occurrence: 'ferias' } }), []);
   // o modelo preenchido fecha exatamente a jornada

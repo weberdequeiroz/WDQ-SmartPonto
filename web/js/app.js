@@ -19,7 +19,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.3.1';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -84,6 +84,7 @@ const ui = {
 };
 
 function go(view) {
+  if (view !== 'history') ui.select = null;
   ui.view = view;
   $('#toast').classList.remove('show');
   render();
@@ -494,6 +495,7 @@ function renderHistory() {
   const isCurrent = monthRange(today())[0] === start;
   const rows = [...rep.rows].reverse();
   const blanks = start <= end ? blankWorkdays(start, end) : [];
+  const sel = ui.select;
   return `
     <div class="pager">
       <button class="icon-btn" data-act="histMonth" data-arg="-1" aria-label="Mês anterior">${icon('left')}</button>
@@ -506,15 +508,33 @@ function renderHistory() {
         <div class="stat"><div class="k">Saldo</div><div class="v ${signCls(rep.totals.balance)}">${fmtDur(rep.totals.balance, { sign: true })}</div></div>
         <div class="stat"><div class="k">Dias</div><div class="v">${rep.totals.daysWorked}</div></div>
       </div>
-      ${blanks.length ? `<button class="btn block wand-btn" style="margin-top:12px" data-act="bulkFill" data-arg="${start}|${end}">${icon('wand')} Preencher ${blanks.length} ${blanks.length > 1 ? 'dias' : 'dia'} sem marcação</button>` : ''}
+      <div class="btn-row" style="margin-top:12px">
+        ${blanks.length && !sel ? `<button class="btn wand-btn" data-act="bulkFill" data-arg="${start}|${end}">${icon('wand')} Preencher ${blanks.length} ${blanks.length > 1 ? 'dias' : 'dia'} em branco</button>` : ''}
+        <button class="btn ${sel ? 'primary' : ''}" data-act="selectMode">${icon(sel ? 'check' : 'calendar')} ${sel ? 'Concluir seleção' : 'Selecionar dias'}</button>
+      </div>
     </section>
-    ${rows.length ? `<ul class="day-list">${rows.map(dayItemHTML).join('')}</ul>` : '<div class="empty">Nada neste mês.</div>'}`;
+    ${sel ? `<div class="sel-help">
+      <span class="small">Toque nos dias para marcar. Atalhos:</span>
+      <div class="chips">
+        <button class="chip" data-act="selQuick" data-arg="blank">Dias em branco</button>
+        <button class="chip" data-act="selQuick" data-arg="work">Todos os dias de trabalho</button>
+        <button class="chip" data-act="selQuick" data-arg="none">Limpar</button>
+      </div>
+    </div>` : ''}
+    ${rows.length ? `<ul class="day-list ${sel ? 'selecting' : ''}">${rows.map(dayItemHTML).join('')}</ul>` : '<div class="empty">Nada neste mês.</div>'}
+    ${sel ? `<div class="sel-bar">
+      <span><b>${sel.size}</b> ${sel.size === 1 ? 'dia selecionado' : 'dias selecionados'}</span>
+      <button class="btn primary" data-act="selApply" ${sel.size ? '' : 'disabled'}>${icon('wand')} Preencher pela jornada</button>
+    </div>` : ''}`;
 }
 
 function dayItemHTML(r) {
   const d = parseDay(r.key);
   const off = !r.punches.length && !r.expected && !r.occurrence;
-  return `<li><button class="day-item ${off ? 'off' : ''}" data-act="openDay" data-arg="${r.key}">
+  const sel = ui.select;
+  const on = sel?.has(r.key);
+  return `<li><button class="day-item ${off ? 'off' : ''} ${on ? 'selected' : ''}" data-act="${sel ? 'toggleSel' : 'openDay'}" data-arg="${r.key}">
+    ${sel ? `<span class="sel-dot">${on ? icon('check') : ''}</span>` : ''}
     <div class="day-date"><b>${pad(d.getDate())}</b><span>${WEEKDAYS[d.getDay()].slice(0, 3)}</span></div>
     <div class="grow">
       <div class="chips">
@@ -575,6 +595,8 @@ ACTIONS.openDay = (key) => openDay(key);
 
 // ---------- Preencher e corrigir pela jornada ----------
 const TYPE_DOT = { in: 'Entrada', break_start: 'Saída para refeição', break_end: 'Volta da refeição', out: 'Saída' };
+const tplOf = (key, withBreak) => dayTemplate(key, state.settings, state.dayInfo, { withBreak })
+  .filter((t) => t.ts <= Date.now());
 
 /** Dias de trabalho já passados, sem nenhuma marcação e sem ocorrência. */
 function blankWorkdays(from, to) {
@@ -601,9 +623,7 @@ function templatePreviewHTML() {
   const start = today();
   let rows = [];
   if (s.scheduleMode === 'cycle' && s.cycle?.days?.length) {
-    // Usa as datas reais da próxima repetição da escala.
-    const n = s.cycle.days.length;
-    for (let i = 0; i < Math.min(n, 14); i++) {
+    for (let i = 0; i < Math.min(s.cycle.days.length, 14); i++) {
       const k = addDays(start, i);
       rows.push([fmtDay(k, { year: false }), templateText(dayTemplate(k, s, {}))]);
     }
@@ -636,23 +656,26 @@ function undoToast(msg, added, removed) {
   });
 }
 
+const dayPunches = (key) => [...(buildDays(state.punches).get(key)?.punches || [])];
+
 /**
  * Painel para preencher, completar ou corrigir um dia com o horário padrão.
  * mode: 'fill' (dia vazio), 'replace' (refaz tudo) ou 'complete' (só o que falta).
  */
 function openFillSheet(key, preferred) {
   const now = Date.now();
-  const existing = [...(buildDays(state.punches, now).get(key)?.punches || [])];
-  const tpl = dayTemplate(key, state.settings, state.dayInfo).filter((t) => t.ts <= now);
-  if (!tpl.length) {
-    toast(expectedMinutesOf(key) ? 'Ainda não chegou o horário da jornada' : 'Este dia não tem jornada prevista (veja Ajustes → Jornada)');
+  const existing = dayPunches(key);
+  const ruleHasBreak = dayTemplate(key, state.settings, state.dayInfo).length === 4;
+  let withBreak = ruleHasBreak;
+  if (!tplOf(key, withBreak).length) {
+    toast(dayTemplate(key, state.settings, state.dayInfo).length ? 'Ainda não chegou o horário da jornada' : 'Este dia não tem jornada prevista (veja Ajustes → Jornada)');
     return;
   }
   let mode = existing.length ? (preferred === 'complete' ? 'complete' : 'replace') : 'fill';
   let rows = [];
   const base = parseDay(key).getTime();
-
   const build = () => {
+    const tpl = tplOf(key, withBreak);
     rows = (mode === 'complete' ? completeWithTemplate(existing, tpl) : tpl).map((t) => ({ ...t }));
   };
   build();
@@ -661,34 +684,30 @@ function openFillSheet(key, preferred) {
   const summary = () => {
     const list = result().map((p, i) => ({ ...p, id: p.id || `n${i}` }));
     const d = summarizeDay(key, buildDays(list, now), state.settings, state.dayInfo, today());
-    return `<span>Trabalhado <b>${fmtDur(d.work)}</b></span><span>Refeição <b>${fmtDur(d.breaks)}</b></span><span>Saldo <b class="${signCls(d.work - d.expected)}">${fmtDur(d.work - d.expected, { sign: true })}</b></span>`;
+    return `<span>Trabalhado <b>${fmtDur(d.work)}</b></span><span>Intervalo <b>${fmtDur(d.breaks)}</b></span><span>Saldo <b class="${signCls(d.work - d.expected)}">${fmtDur(d.work - d.expected, { sign: true })}</b></span>`;
   };
-
   const rowsHTML = () => {
     const kept = mode === 'complete' ? existing : [];
     const all = [...kept.map((p) => ({ p, kept: true })), ...rows.map((p, i) => ({ p, i }))].sort((a, b) => a.p.ts - b.p.ts);
-    if (mode === 'complete' && !rows.length) return '<p class="small muted" style="text-align:center">Nada a completar: o dia já tem todas as marcações.</p>';
-    return all.map(({ p, kept, i }) => {
-      const next = dayKey(p.ts) !== key;
-      return `<div class="fill-row ${kept ? 'kept' : ''}">
+    if (mode === 'complete' && !rows.length) return '<p class="small muted" style="text-align:center;padding:10px">Nada a completar: o dia já tem todas as marcações.</p>';
+    return all.map(({ p, kept, i }) => `<div class="fill-row ${kept ? 'kept' : ''}">
         <span class="tag t-${p.type}"></span>
-        <span class="grow"><b>${TYPE_DOT[p.type]}</b>${kept ? '<br><span class="small muted">já marcado</span>' : next ? '<br><span class="small muted">dia seguinte</span>' : ''}</span>
+        <span class="grow"><b>${TYPE_DOT[p.type]}</b>${kept ? '<br><span class="small muted">já marcado</span>' : dayKey(p.ts) !== key ? '<br><span class="small muted">dia seguinte</span>' : ''}</span>
         ${kept ? `<span class="fill-time">${hhmm(p.ts)}</span>` : `<input class="input fill-time" type="time" data-row="${i}" value="${hhmm(p.ts)}">`}
-      </div>`;
-    }).join('');
+      </div>`).join('');
   };
 
-  const title = mode === 'fill' ? 'Preencher com a jornada' : 'Corrigir pela jornada';
   openSheet(`
     <div class="fill-head">
       <span class="fill-ico">${icon('wand')}</span>
-      <div><h3>${title}</h3><p class="sub" style="margin:0">${esc(fmtDayLong(key))}</p></div>
+      <div><h3>${mode === 'fill' ? 'Preencher com a jornada' : 'Corrigir pela jornada'}</h3><p class="sub" style="margin:0">${esc(fmtDayLong(key))}</p></div>
     </div>
     ${existing.length ? `<div class="seg" style="margin-top:14px">
       <button data-mode="replace" class="${mode === 'replace' ? 'active' : ''}">Refazer o dia</button>
       <button data-mode="complete" class="${mode === 'complete' ? 'active' : ''}">Completar o que falta</button>
     </div>
     <p class="small muted" data-mode-hint style="margin:-4px 0 10px"></p>` : '<p class="small muted" style="margin:12px 0 10px">Horários do seu horário padrão. Ajuste algum se precisar.</p>'}
+    <label class="switch fill-switch"><span><b>Intervalo de refeição</b><br><span class="small muted">${fmtDur((state.settings.mealMinutes || 60) * MIN)} a partir das ${esc(state.settings.mealStart || '12:00')}</span></span><input type="checkbox" data-break ${withBreak ? 'checked' : ''}></label>
     <div class="fill-list" data-rows>${rowsHTML()}</div>
     <div class="fill-sum" data-sum>${summary()}</div>
     <p class="small muted" style="margin:10px 0 14px">${icon('info')} As marcações ficam identificadas como <b>preenchidas pela jornada</b> no histórico e no espelho de ponto.</p>
@@ -728,6 +747,11 @@ function openFillSheet(key, preferred) {
       build();
       refresh();
     }));
+    $('[data-break]', s).addEventListener('change', (e) => {
+      withBreak = e.target.checked;
+      build();
+      refresh();
+    });
     $('[data-ok]', s).addEventListener('click', async () => {
       const list = result();
       if (!rows.length) { closeSheet(); return; }
@@ -745,62 +769,161 @@ function openFillSheet(key, preferred) {
     });
   });
 }
-const expectedMinutesOf = (key) => dayTemplate(key, state.settings, state.dayInfo).length > 0;
 ACTIONS.fillDay = (key) => openFillSheet(key);
 
-/** Vários dias em branco de uma vez, com a opção de lançar folga, falta etc. em vez de preencher. */
-function openBulkFill(keys, title = 'Dias sem marcação') {
-  if (!keys.length) return toast('Nenhum dia em branco');
-  const choice = Object.fromEntries(keys.map((k) => [k, 'fill']));
-  const OPTIONS = [['fill', 'Preencher com a jornada'], ...Object.entries(OCCURRENCES).map(([k, v]) => [k, v.label]), ['skip', 'Deixar em branco']];
+/**
+ * Vários dias de uma vez. Para cada dia: preencher (vazio), refazer ou completar (com marcações),
+ * lançar uma ocorrência (folga, falta…) ou deixar como está.
+ */
+function openBulkFill(keys, title = 'Preencher pela jornada') {
+  keys = [...new Set(keys)].sort();
+  if (!keys.length) return toast('Nenhum dia selecionado');
+  const info = Object.fromEntries(keys.map((k) => [k, {
+    has: dayPunches(k).length > 0,
+    jornada: dayTemplate(k, state.settings, state.dayInfo).length > 0,
+    occ: state.dayInfo[k]?.occurrence || null,
+  }]));
+  const choice = Object.fromEntries(keys.map((k) => {
+    const i = info[k];
+    return [k, !i.jornada ? 'skip' : i.has ? 'replace' : 'fill'];
+  }));
+  let withBreak = null; // null = regra de Ajustes
+  const options = (k) => {
+    const i = info[k];
+    const work = !i.jornada ? [] : i.has
+      ? [['replace', 'Refazer pela jornada'], ['complete', 'Completar o que falta']]
+      : [['fill', 'Preencher pela jornada']];
+    return [...work, ...Object.entries(OCCURRENCES).map(([v, o]) => [v, o.label]), ['skip', i.has ? 'Manter como está' : 'Deixar em branco']];
+  };
+  const detail = (k) => {
+    const c = choice[k];
+    const i = info[k];
+    if (c === 'skip') return !i.jornada ? 'sem jornada neste dia' : i.has ? 'sem alteração' : 'continua em branco';
+    if (OCCURRENCES[c]) return OCCURRENCES[c].label;
+    const tpl = tplOf(k, withBreak ?? undefined);
+    if (c === 'complete') {
+      const add = completeWithTemplate(dayPunches(k), tpl);
+      return add.length ? `acrescenta ${add.map((t) => hhmm(t.ts)).join(', ')}` : 'já está completo';
+    }
+    return templateText(tpl);
+  };
+  const count = () => Object.values(choice).filter((v) => v !== 'skip').length;
+  const listHTML = () => keys.map((k) => `<div class="bulk-row">
+      <div class="grow"><b>${esc(fmtDay(k, { year: false }))}</b>${info[k].has ? ' <span class="chip mini">com marcações</span>' : ''}<br><span class="small muted" data-tt="${k}">${esc(detail(k))}</span></div>
+      <select class="input" data-day="${k}">${options(k).map(([v, l]) => `<option value="${v}" ${choice[k] === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+    </div>`).join('');
+
   openSheet(`
     <div class="fill-head">
       <span class="fill-ico">${icon('wand')}</span>
-      <div><h3>${esc(title)}</h3><p class="sub" style="margin:0">${keys.length} ${keys.length > 1 ? 'dias de trabalho sem nenhuma marcação' : 'dia de trabalho sem nenhuma marcação'}</p></div>
+      <div><h3>${esc(title)}</h3><p class="sub" style="margin:0">${keys.length} ${keys.length > 1 ? 'dias selecionados' : 'dia selecionado'}</p></div>
     </div>
-    <div class="bulk-list">
-      ${keys.map((k) => `<div class="bulk-row">
-        <div class="grow"><b>${esc(fmtDay(k, { year: false }))}</b><br><span class="small muted" data-tt="${k}">${templateText(dayTemplate(k, state.settings, state.dayInfo))}</span></div>
-        <select class="input" data-day="${k}">${OPTIONS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select>
-      </div>`).join('')}
+    <div class="bulk-tools">
+      <span class="small muted">Aplicar a todos:</span>
+      <select class="input" data-all>
+        <option value="">Escolher…</option>
+        <option value="work">Preencher / refazer pela jornada</option>
+        <option value="complete">Completar o que falta</option>
+        ${Object.entries(OCCURRENCES).map(([v, o]) => `<option value="${v}">${esc(o.label)}</option>`).join('')}
+        <option value="skip">Não alterar</option>
+      </select>
     </div>
-    <p class="small muted" style="margin:10px 0 14px">${icon('info')} Os horários vêm do seu horário padrão (Ajustes → Jornada) e ficam identificados como preenchidos.</p>
+    <label class="switch fill-switch"><span><b>Intervalo de refeição</b><br><span class="small muted" data-break-hint>Conforme Ajustes</span></span><input type="checkbox" data-break ${keys.some((k) => dayTemplate(k, state.settings, state.dayInfo).length === 4) ? 'checked' : ''}></label>
+    <div class="bulk-list" data-list>${listHTML()}</div>
+    <p class="small muted" style="margin:10px 0 14px">${icon('info')} Horários do seu horário padrão (Ajustes → Jornada). As marcações ficam identificadas como preenchidas pela jornada.</p>
     <div class="btn-row">
       <button class="btn" data-close>Cancelar</button>
-      <button class="btn primary" data-ok>${icon('check')} <span data-ok-label>Aplicar em ${keys.length} ${keys.length > 1 ? 'dias' : 'dia'}</span></button>
+      <button class="btn primary" data-ok>${icon('check')} <span data-ok-label></span></button>
     </div>`, (s) => {
-    $$('[data-day]', s).forEach((el) => el.addEventListener('change', () => {
-      choice[el.dataset.day] = el.value;
-      $(`[data-tt="${el.dataset.day}"]`, s).textContent = el.value === 'fill'
-        ? templateText(dayTemplate(el.dataset.day, state.settings, state.dayInfo))
-        : el.value === 'skip' ? 'sem alteração' : OCCURRENCES[el.value].label;
-      const n = Object.values(choice).filter((v) => v !== 'skip').length;
-      $('[data-ok-label]', s).textContent = `Aplicar em ${n} ${n === 1 ? 'dia' : 'dias'}`;
-    }));
+    const label = () => {
+      const n = count();
+      $('[data-ok-label]', s).textContent = n ? `Aplicar em ${n} ${n === 1 ? 'dia' : 'dias'}` : 'Nada a aplicar';
+    };
+    const bindList = () => {
+      $$('[data-day]', s).forEach((el) => el.addEventListener('change', () => {
+        choice[el.dataset.day] = el.value;
+        $(`[data-tt="${el.dataset.day}"]`, s).textContent = detail(el.dataset.day);
+        label();
+      }));
+    };
+    const redraw = () => { $('[data-list]', s).innerHTML = listHTML(); bindList(); label(); };
+    bindList();
+    label();
+    $('[data-all]', s).addEventListener('change', (e) => {
+      const v = e.target.value;
+      if (!v) return;
+      keys.forEach((k) => {
+        const opts = options(k).map(([o]) => o);
+        const want = v === 'work' ? (info[k].has ? 'replace' : 'fill') : v;
+        if (opts.includes(want)) choice[k] = want;
+      });
+      e.target.value = '';
+      redraw();
+    });
+    $('[data-break]', s).addEventListener('change', (e) => {
+      withBreak = e.target.checked ? true : false;
+      $('[data-break-hint]', s).textContent = withBreak ? `${fmtDur((state.settings.mealMinutes || 60) * MIN)} em todos os dias` : 'Sem intervalo';
+      redraw();
+    });
     $('[data-ok]', s).addEventListener('click', async () => {
+      if (!count()) { closeSheet(); return; }
       const added = [];
-      let filled = 0; let marked = 0;
+      const removed = [];
+      let worked = 0; let marked = 0;
       for (const k of keys) {
         const c = choice[k];
-        if (c === 'fill') {
-          for (const t of dayTemplate(k, state.settings, state.dayInfo)) added.push(await addPunch({ type: t.type, ts: t.ts, reason: t.reason, auto: true }));
-          filled++;
-        } else if (c !== 'skip') {
+        if (c === 'skip') continue;
+        if (OCCURRENCES[c]) {
           await setDayInfo(k, { ...(state.dayInfo[k] || {}), occurrence: c });
           marked++;
+          continue;
         }
+        const tpl = tplOf(k, withBreak ?? undefined);
+        const existing = dayPunches(k);
+        let toAdd = tpl;
+        if (c === 'replace') { for (const p of existing) { await deletePunch(p.id); removed.push(p); } }
+        if (c === 'complete') toAdd = completeWithTemplate(existing, tpl);
+        // Dia que tinha ocorrência e passou a ser trabalhado: tira a ocorrência.
+        if (state.dayInfo[k]?.occurrence) await setDayInfo(k, { ...state.dayInfo[k], occurrence: null });
+        for (const t of toAdd) added.push(await addPunch({ type: t.type, ts: t.ts, reason: t.reason, auto: true }));
+        if (toAdd.length) worked++;
       }
+      ui.select = null;
       closeSheet();
       render();
-      const msg = [filled ? `${filled} ${filled > 1 ? 'dias preenchidos' : 'dia preenchido'}` : '', marked ? `${marked} com ocorrência` : ''].filter(Boolean).join(' · ') || 'Nada alterado';
-      if (added.length) undoToast(msg, added, []); else toast(msg);
+      const msg = [worked ? `${worked} ${worked > 1 ? 'dias ajustados' : 'dia ajustado'} pela jornada` : '', marked ? `${marked} com ocorrência` : ''].filter(Boolean).join(' · ') || 'Nada alterado';
+      if (added.length || removed.length) undoToast(msg, added, removed); else toast(msg);
     });
   });
 }
 ACTIONS.bulkFill = (range) => {
   const [a, b] = range.split('|');
-  openBulkFill(blankWorkdays(a, b));
+  openBulkFill(blankWorkdays(a, b), 'Dias sem marcação');
 };
+
+// Seleção de vários dias no Histórico
+ACTIONS.selectMode = () => {
+  ui.select = ui.select ? null : new Set();
+  render();
+};
+ACTIONS.toggleSel = (key) => {
+  if (!ui.select) return;
+  if (ui.select.has(key)) ui.select.delete(key); else ui.select.add(key);
+  render();
+};
+ACTIONS.selQuick = (kind) => {
+  const [start, endOfMonth] = monthRange(ui.historyMonth);
+  const end = endOfMonth > today() ? today() : endOfMonth;
+  ui.select = new Set();
+  if (kind === 'blank') blankWorkdays(start, end).forEach((k) => ui.select.add(k));
+  if (kind === 'work') {
+    for (let k = start; k <= end; k = addDays(k, 1)) {
+      if (dayTemplate(k, state.settings, state.dayInfo).length && !state.dayInfo[k]?.occurrence) ui.select.add(k);
+    }
+  }
+  render();
+};
+ACTIONS.selApply = () => openBulkFill([...(ui.select || [])], 'Dias selecionados');
 
 // ---------- Tela: Relatórios ----------
 const REPORT_MODES = { day: 'Dia', week: 'Semana', month: 'Mês', year: 'Ano', custom: 'Período' };
@@ -1117,7 +1240,7 @@ function jornadaHTML(s) {
     <p style="margin:10px 0 0"><b data-sched-summary>${esc(scheduleSummary(s))}</b></p>
     <div class="std-hours">
       <h3>Horário padrão</h3>
-      <p class="small muted" style="margin:0 0 10px">Usado para preencher dias esquecidos e corrigir dias lançados errado. A saída é calculada pela jornada de cada dia; jornadas acima de 6h incluem a refeição.</p>
+      <p class="small muted" style="margin:0 0 10px">Usado para preencher dias esquecidos e corrigir dias lançados errado. A saída é calculada pela jornada de cada dia.</p>
       <div class="grid-3">
         <label class="field"><span>Entrada</span><input class="input" type="time" data-set="workStart" value="${esc(s.workStart || '08:00')}"></label>
         <label class="field"><span>Saída p/ refeição</span><input class="input" type="time" data-set="mealStart" value="${esc(s.mealStart || '12:00')}"></label>
@@ -1125,6 +1248,11 @@ function jornadaHTML(s) {
           <select class="input" data-set="mealMinutes">${[15, 20, 30, 45, 60, 75, 90, 120].map((m) => `<option value="${m}" ${Number(s.mealMinutes) === m ? 'selected' : ''}>${m >= 60 ? fmtDur(m * MIN) : `${m} min`}</option>`).join('')}</select>
         </label>
       </div>
+      <label class="field"><span>Intervalo em jornadas de até 6h</span>
+        <select class="input" data-set="shortBreak">
+          ${[['meal', 'Usar a mesma refeição (padrão)'], ['clt', 'Conforme a CLT: 15 min acima de 4h, nada até 4h'], ['none', 'Sem intervalo']].map(([v, l]) => `<option value="${v}" ${(s.shortBreak || 'meal') === v ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+      </label>
       <div data-tpl-preview>${templatePreviewHTML()}</div>
     </div>
     <button class="btn block" data-act="savePreset" style="margin-top:12px">${icon('plus')} Salvar como meu modelo</button>
@@ -1236,7 +1364,7 @@ VIEWS.settings.mount = () => {
       }
       await saveSettings({ [key]: v });
       if (key === 'theme') applyTheme();
-      if (['workStart', 'mealStart', 'mealMinutes'].includes(key)) $('[data-tpl-preview]').innerHTML = templatePreviewHTML();
+      if (['workStart', 'mealStart', 'mealMinutes', 'shortBreak'].includes(key)) $('[data-tpl-preview]').innerHTML = templatePreviewHTML();
       syncAlarms();
     });
   });

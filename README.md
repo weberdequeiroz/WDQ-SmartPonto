@@ -36,6 +36,8 @@ Em **Ajustes → Jornada → Horário padrão**, informe a entrada e a saída pa
 
 - **Preencher um dia:** no Histórico, toque no dia e em **Preencher com a jornada**. Os horários aparecem para conferir e ajustar antes de confirmar.
 - **Corrigir um dia lançado errado:** no dia, **Corrigir pela jornada** → **Refazer o dia** (substitui tudo) ou **Completar o que falta** (mantém o que foi marcado e acrescenta só o que faltou, como a saída).
+- **Selecionar dias:** no Histórico, toque em **Selecionar dias**, marque os dias que quiser (ou use os atalhos *Dias em branco* e *Todos os dias de trabalho*) e toque em **Preencher pela jornada**. Dias vazios são preenchidos; dias com marcações podem ser refeitos ou completados.
+- **Intervalo:** jornadas acima de 6h sempre têm a refeição. Para jornadas menores (ex.: sábado de 4h), escolha em Ajustes: usar a mesma refeição (padrão), seguir a CLT (15 min acima de 4h) ou sem intervalo. No painel de preenchimento há uma chave para incluir ou tirar o intervalo naquele momento.
 - **Vários dias de uma vez:** a tela inicial avisa quando há dias de trabalho sem marcação, e o Histórico mostra **Preencher N dias sem marcação**. Para cada dia dá para escolher preencher, lançar folga, falta, férias, atestado, feriado, abono ou deixar em branco.
 - **Hoje:** se o dia começou e nada foi marcado, aparece **Esqueceu de marcar? Preencher até agora**.
 

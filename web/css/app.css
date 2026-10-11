@@ -399,7 +399,7 @@ details.more[open] summary { margin-bottom: 10px; }
 .fill-sum b { font-variant-numeric: tabular-nums; }
 .bulk-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; max-height: 46vh; overflow-y: auto; }
 .bulk-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 14px; }
-.bulk-row .input { width: 54%; min-height: 40px; padding: 6px 8px; font-size: 14px; }
+.bulk-row .input { width: 46%; min-height: 40px; padding: 6px 8px; font-size: 14px; }
 .std-hours { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .std-hours h3 { margin: 0 0 4px; font-size: 16px; }
 .grid-3 { display: grid; grid-template-columns: 1fr 1fr 96px; gap: 8px; }
@@ -411,6 +411,26 @@ details.more[open] summary { margin-bottom: 10px; }
 .tpl-preview div:last-child { border-bottom: 0; }
 .tpl-preview span { color: var(--muted); }
 .tpl-preview b { font-variant-numeric: tabular-nums; }
+
+.fill-switch { border: 1px solid var(--border); border-radius: 14px; padding: 10px 14px; margin-bottom: 12px; }
+.bulk-tools { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; }
+.bulk-tools .input { flex: 1; min-height: 40px; padding: 6px 8px; font-size: 14px; }
+.chip.mini { font-size: 11px; padding: 1px 7px; color: var(--muted); }
+.sel-help { margin: -4px 0 12px; }
+.sel-help .chips { margin-top: 6px; }
+.sel-help .chip { cursor: pointer; }
+.day-list.selecting { padding-bottom: 70px; }
+.day-item.selected { border-color: var(--brand); background: linear-gradient(135deg, rgba(79, 70, 229, .10), rgba(124, 58, 237, .10)); }
+.sel-dot { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border); flex: none; display: grid; place-items: center; }
+.day-item.selected .sel-dot { background: var(--brand); border-color: var(--brand); color: #fff; }
+.sel-dot svg.i { width: 15px; height: 15px; stroke-width: 3; }
+.sel-bar {
+  position: fixed; left: 12px; right: 12px; bottom: calc(72px + var(--safe-bottom)); z-index: 20;
+  max-width: 696px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 10px 10px 16px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, .25); animation: up .2s ease-out;
+}
+.sel-bar .btn { min-height: 44px; }
 
 /* ---------- Painéis (sheets) ---------- */
 .sheet-backdrop {

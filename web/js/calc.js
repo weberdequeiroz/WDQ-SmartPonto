@@ -229,30 +229,46 @@ export function scheduleSummary(settings) {
  * Marcações de um dia montadas a partir do horário padrão e da jornada prevista.
  * Jornada acima de 6h ganha o intervalo de refeição; a saída fecha exatamente a jornada do dia.
  */
-export function dayTemplate(key, settings, dayInfo) {
+export function dayTemplate(key, settings, dayInfo, opts = {}) {
   const exp = expectedMinutes(key, settings, dayInfo);
   if (exp <= 0) return [];
   const entry = parseHHMM(settings.workStart || '08:00') ?? 480;
-  const meal = Math.max(0, Number(settings.mealMinutes ?? 60));
+  const pause = breakMinutes(exp, settings, opts.withBreak);
   const base = parseDay(key);
   const at = (min) => {
     const d = new Date(base);
     d.setHours(0, min, 0, 0); // minutos além de 24h caem no dia seguinte (turno noturno)
     return d.getTime();
   };
-  if (exp > 360 && meal > 0) {
+  if (pause > 0) {
     let start = parseHHMM(settings.mealStart || '12:00') ?? 720;
-    // Refeição fora do turno (ex.: turno da noite): vai para o meio da jornada, em hora cheia ou meia hora.
-    if (start <= entry || start >= entry + exp) start = entry + Math.round(exp / 2 / 30) * 30;
+    // Intervalo fora do turno (turno da noite, jornada curta): vai para o meio da jornada, em hora cheia ou meia hora.
+    if (start <= entry || start >= entry + exp) start = entry + Math.max(30, Math.round(exp / 2 / 30) * 30);
     const after = exp - (start - entry);
     return [
       { type: 'in', ts: at(entry) },
       { type: 'break_start', ts: at(start), reason: 'Refeição' },
-      { type: 'break_end', ts: at(start + meal) },
-      { type: 'out', ts: at(start + meal + after) },
+      { type: 'break_end', ts: at(start + pause) },
+      { type: 'out', ts: at(start + pause + after) },
     ];
   }
   return [{ type: 'in', ts: at(entry) }, { type: 'out', ts: at(entry + exp) }];
+}
+
+/**
+ * Minutos de intervalo para uma jornada. Acima de 6h sempre há refeição.
+ * Até 6h depende de settings.shortBreak: 'meal' (mesma refeição), 'clt' (15 min acima de 4h) ou 'none'.
+ * withBreak força com (true) ou sem (false) a refeição.
+ */
+export function breakMinutes(exp, settings, withBreak) {
+  const meal = Math.max(0, Number(settings.mealMinutes ?? 60));
+  if (withBreak === true) return meal;
+  if (withBreak === false) return 0;
+  if (exp > 360) return meal;
+  const mode = settings.shortBreak || 'meal';
+  if (mode === 'meal') return meal;
+  if (mode === 'clt') return exp > 240 ? 15 : 0;
+  return 0;
 }
 
 /** Completa um dia: mantém o que já foi marcado e acrescenta só os tipos que faltam. */
@@ -421,5 +437,6 @@ export const DEFAULT_SETTINGS = {
   // Horário padrão usado para preencher e corrigir dias
   workStart: '08:00',
   mealStart: '12:00',
+  shortBreak: 'meal',
   holidays: true,
 };
