@@ -1,0 +1,7 @@
+# Os dados do servidor (chaves e banco) nunca podem ser baixados.
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Deny from all
+</IfModule>

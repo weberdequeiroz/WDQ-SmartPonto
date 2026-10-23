@@ -7,6 +7,7 @@ import {
 } from './calc.js';
 import { occurrences, describe } from './reminders.js';
 import { isAndroidApp, nativeSetAlarms } from './platform.js';
+import { syncPush } from './push.js';
 
 const HORIZON = 45 * 24 * HOUR;
 const MAX_ALARMS = 500;
@@ -98,6 +99,8 @@ export function syncAlarms() {
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     if (isAndroidApp) nativeSetAlarms(upcomingAlarms());
+    // Servidor de avisos (iPhone/navegador): próximos 10 dias.
+    else syncPush(upcomingAlarms(Date.now(), Date.now() + 10 * 24 * HOUR));
   }, 400);
 }
 

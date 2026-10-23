@@ -16,11 +16,15 @@ import {
 import {
   RULE_TYPES, describe, nextOccurrence, occurrences, toICS, newReminder, holidayName, punchAlertsICS,
 } from './reminders.js';
+import { CHANGELOG, cmpVersion } from './changelog.js';
+import {
+  pushSupported, pushActive, enablePush, disablePush, testPush, lastPushSync,
+} from './push.js';
 import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.4.2';
+export const VERSION = '1.5.0';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -66,6 +70,7 @@ const ICONS = {
   repeat: '<path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/>',
   check: '<path d="M20 6L9 17l-5-5"/>',
   home: '<path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
   wand: '<path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8L19 13M17.8 6.2L19 5M3 21l9-9M12.2 6.2L11 5"/>',
 };
 const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -375,6 +380,7 @@ function renderHome() {
   const showInstall = isIOS && !isStandalone;
 
   return `
+    ${updateBannerHTML()}
     ${showInstall ? `<div class="banner">${icon('download')}<span>Para instalar no iPhone: toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>.</span></div>` : ''}
     ${missingBannerHTML()}
     ${needBackup ? `<div class="banner">${icon('shield')}<span>${daysSinceBackup === null ? 'Você ainda não fez backup.' : `Último backup há ${daysSinceBackup} dias.`}</span><button class="btn" data-act="backup">Fazer agora</button></div>` : ''}
@@ -1382,12 +1388,12 @@ function renderSettings() {
 
     <section class="card">
       <h2>Alertas do ponto</h2>
-      ${isAndroidApp ? '<p class="small muted" style="margin-top:0">Avisos automáticos conforme suas marcações, inclusive com o app fechado.</p>' : `
+      ${isAndroidApp || pushActive() ? `<p class="small muted" style="margin-top:0">Avisos automáticos conforme suas marcações, inclusive com o app fechado${pushActive() ? ' (pelo seu servidor de avisos)' : ''}.</p>` : `
       <div class="cal-alert">
         <b>${icon('info')} ${isIOS ? 'No iPhone' : 'No navegador'}, estes avisos só tocam com o app aberto na tela</b>
         <p class="small">Para ser avisado com o celular bloqueado, coloque os horários do ponto na Agenda${isIOS ? ' do iPhone' : ''}. A Agenda avisa em todo dia de trabalho, na entrada, no almoço, na volta e na saída, conforme os alertas ligados abaixo.</p>
         <button class="btn primary block" data-act="punchIcs">${icon('calendar')} Adicionar alertas do ponto à Agenda</button>
-        <p class="small muted" style="margin:8px 0 0">Mudou o horário de trabalho? Apague o calendário antigo na Agenda e toque aqui de novo.</p>
+        <p class="small muted" style="margin:8px 0 0">Mudou o horário de trabalho? Apague o calendário antigo na Agenda e toque aqui de novo. Ou ative os <a href="#push" data-act="goPush">avisos pelo servidor</a>.</p>
       </div>`}
       <label class="switch"><span><b>Lembrar de marcar a entrada</b><br><span class="small muted">5 min depois do seu horário de entrada, se ainda não marcou</span></span><input type="checkbox" data-set="alertEntry" ${s.alertEntry ? 'checked' : ''}></label>
       <label class="switch"><span><b>Fim do intervalo de refeição</b><br><span class="small muted">Avisa quando terminar o seu horário de almoço</span></span><input type="checkbox" data-set="alertMealEnd" ${s.alertMealEnd ? 'checked' : ''}></label>
@@ -1398,6 +1404,8 @@ function renderSettings() {
         <select class="input" data-set="alertStyle"><option value="notify" ${s.alertStyle !== 'alarm' ? 'selected' : ''}>Notificação</option><option value="alarm" ${s.alertStyle === 'alarm' ? 'selected' : ''}>Alarme em tela cheia</option></select>
       </label>
     </section>
+
+    ${pushCardHTML()}
 
     <section class="card">
       <h2>Modalidade e feriados</h2>
@@ -1434,7 +1442,8 @@ function renderSettings() {
       <div class="about-logo">
         <img src="icons/icon.svg" alt="Logotipo WDQ SmartPonto">
         <div><b>WDQ SmartPonto</b> <span class="muted">v${VERSION}${isAndroidApp ? ' · Android' : ''}</span></div>
-        <div class="small muted">Controle pessoal de jornada. Funciona sem internet e não envia seus dados a nenhum servidor.<br>Este app não substitui o registro de ponto oficial do empregador.</div>
+        <div class="small muted">Controle pessoal de jornada. Funciona sem internet; seus dados só saem do aparelho se você ativar o servidor de avisos (vão para o seu servidor).<br>Este app não substitui o registro de ponto oficial do empregador.</div>
+        <button class="btn block wand-btn" data-act="whatsNew" style="margin-top:10px">${icon('sparkle')} Novidades do app</button>
       </div>
     </section>`;
 }
@@ -1547,12 +1556,16 @@ function permissionBanner() {
       <div class="btn-row">${items.map(([k, l]) => `<button class="btn" data-act="permit" data-arg="${k}">${l}</button>`).join('')}</div>
     </div>`;
   }
+  if (pushActive()) {
+    return `<div class="push-ok">${icon('check')}<div><b>Avisos com o app fechado ativos</b><br><span class="small">Seu servidor de avisos envia as notificações na hora certa.</span></div></div>`;
+  }
   const canNotify = 'Notification' in window;
   return `<div class="card warn-card">
     <b>${icon('info')} ${isIOS ? 'No iPhone' : 'No navegador'}, o alarme toca com o app aberto</b>
     <p class="small muted" style="margin:6px 0 10px">Para ser avisado com o app fechado e na tela bloqueada, adicione os lembretes à agenda do celular: a agenda avisa no horário certo, com a mesma repetição.</p>
     <div class="btn-row">
       <button class="btn primary" data-act="icsAll">${icon('calendar')} Adicionar todos à agenda</button>
+      <button class="btn" data-act="goPushSettings">${icon('bell')} Avisos pelo servidor</button>
       ${canNotify && Notification.permission === 'default' ? `<button class="btn" data-act="webNotif">${icon('bell')} Permitir notificações</button>` : ''}
     </div>
   </div>`;
@@ -1903,6 +1916,121 @@ function showAlarm(a) {
   }));
 }
 
+// ---------- Novidades e atualização ----------
+const LS_SEEN = 'sp-seen-version';
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
+const SITE = 'https://weberdequeiroz.github.io/WDQ-SmartPonto/';
+
+/** Tela "Novidades": versões ainda não vistas (ou todas, pelo menu Sobre). */
+function openWhatsNew({ all = false, since = null } = {}) {
+  const list = all ? CHANGELOG : CHANGELOG.filter((c) => !since || cmpVersion(c.version, since) > 0);
+  if (!list.length) return;
+  const [main, ...older] = list;
+  const date = (d) => fmtDay(d, { weekday: false });
+  const items = (c) => c.items.map((it) => `<div class="news-item"><span class="news-ico">${icon(it.icon)}</span><div><b>${esc(it.title)}</b><p>${esc(it.text)}</p></div></div>`).join('');
+  openSheet(`
+    <div class="news-hero">
+      <span class="news-badge">${icon('sparkle')} Novidades</span>
+      <h3>${esc(main.title)}</h3>
+      <p>Versão ${esc(main.version)} · ${date(main.date)}</p>
+    </div>
+    <div class="news-list">${items(main)}</div>
+    ${older.length ? `<details class="more news-older" ${all ? '' : ''}><summary>Versões anteriores</summary>
+      ${older.map((c) => `<div class="news-ver"><b>${esc(c.title)}</b> <span class="small muted">v${esc(c.version)} · ${date(c.date)}</span></div>${items(c)}`).join('')}
+    </details>` : ''}
+    <button class="btn primary block" data-close style="margin-top:6px">Continuar</button>`);
+  lsSet(LS_SEEN, VERSION);
+}
+ACTIONS.whatsNew = () => openWhatsNew({ all: true });
+
+/** Depois de atualizar, mostra o que mudou (uma vez). Na primeira instalação só registra a versão. */
+function maybeShowWhatsNew() {
+  const seen = lsGet(LS_SEEN);
+  if (!seen) { lsSet(LS_SEEN, VERSION); return; }
+  if (cmpVersion(VERSION, seen) > 0 && !sheetEl) openWhatsNew({ since: seen });
+}
+
+// Versão mais nova publicada (lida do próprio site).
+let updateTo = null;
+let lastCheck = 0;
+async function checkForUpdate() {
+  if (Date.now() - lastCheck < 30 * MIN) return;
+  lastCheck = Date.now();
+  try {
+    const base = isAndroidApp ? SITE : './';
+    const text = await (await fetch(`${base}js/app.js?v=${Date.now()}`, { cache: 'no-store' })).text();
+    const m = /export const VERSION = '([\d.]+)'/.exec(text);
+    if (m && cmpVersion(m[1], VERSION) > 0) {
+      updateTo = m[1];
+      if (ui.view === 'home' && !sheetEl) render();
+    }
+  } catch { /* sem internet */ }
+}
+
+function updateBannerHTML() {
+  if (!updateTo) return '';
+  return `<div class="update-banner">
+    <span class="update-ico">${icon('sparkle')}</span>
+    <span class="grow"><b>Nova versão ${esc(updateTo)} disponível</b><br><span class="small">${isAndroidApp ? 'Baixe e instale por cima, seus dados continuam.' : 'Toque para atualizar agora.'}</span></span>
+    <button class="btn" data-act="doUpdate">${isAndroidApp ? 'Baixar' : 'Atualizar'}</button>
+  </div>`;
+}
+ACTIONS.doUpdate = async () => {
+  if (isAndroidApp) { window.location.href = `${SITE}SmartPonto.apk`; return; }
+  try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch { /* ok */ }
+  window.location.reload();
+};
+
+// ---------- Avisos com o app fechado (servidor) ----------
+function pushCardHTML() {
+  if (isAndroidApp) return '';
+  const p = state.settings.push;
+  const sync = lastPushSync();
+  const guide = 'https://github.com/weberdequeiroz/WDQ-SmartPonto/blob/main/server/LEIA-ME.md';
+  if (p) {
+    return `<section class="card" id="push">
+      <h2>Avisos com o app fechado</h2>
+      <div class="push-ok">${icon('check')}<div><b>Ativo neste aparelho</b><br><span class="small">${sync?.ok ? `Avisos enviados ao servidor às ${hhmm(sync.at)} (${sync.count})` : sync && !sync.ok ? `Falha na última sincronização: ${esc(sync.error)}` : 'Sincronizando…'}</span></div></div>
+      <p class="small muted">Lembretes e alertas do ponto dos próximos 10 dias ficam no seu servidor, que avisa na hora certa. Abra o app de vez em quando para manter a lista em dia.</p>
+      <div class="btn-row">
+        <button class="btn" data-act="pushTest">${icon('bell')} Enviar teste</button>
+        <button class="btn danger" data-act="pushOff">Desativar</button>
+      </div>
+    </section>`;
+  }
+  const notInstalled = isIOS && !isStandalone;
+  return `<section class="card" id="push">
+    <h2>Avisos com o app fechado</h2>
+    <p class="small" style="margin-top:0">Com um servidor seu (ex.: Hostinger), o ${isIOS ? 'iPhone' : 'celular'} recebe os lembretes e alertas do ponto mesmo com o app fechado e a tela bloqueada.</p>
+    ${!pushSupported() || notInstalled ? `<div class="banner">${icon('info')}<span>${notInstalled ? 'Primeiro instale o app: Compartilhar → Adicionar à Tela de Início, e abra por lá.' : 'Este navegador não aceita notificações. No iPhone, use iOS 16.4 ou mais novo.'}</span></div>` : `
+    <label class="field"><span>Link do servidor de avisos</span><input class="input" data-push-link placeholder="https://seusite.com/smartponto-push/api.php?k=…" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    <button class="btn primary block" data-act="pushOn">${icon('bell')} Ativar avisos</button>`}
+    <p class="small muted" style="margin:10px 0 0">Como instalar o servidor: <a href="${guide}" target="_blank" rel="noopener">guia passo a passo</a>.</p>
+  </section>`;
+}
+ACTIONS.pushOn = async () => {
+  const link = $('[data-push-link]')?.value || '';
+  if (!link.trim()) return toast('Cole o link do servidor');
+  toast('Ativando…');
+  try {
+    await enablePush(link);
+    syncAlarms();
+    render();
+    toast('Avisos ativados. Envie um teste!');
+  } catch (e) { toast(e.message); }
+};
+ACTIONS.pushTest = async () => {
+  try { await testPush(); toast('Teste enviado. A notificação chega em instantes.'); } catch (e) { toast(e.message); }
+};
+ACTIONS.pushOff = async () => {
+  const ok = await confirmSheet({ title: 'Desativar avisos com o app fechado?', text: 'O servidor para de enviar notificações para este aparelho.', ok: 'Desativar', danger: true });
+  if (!ok) return;
+  await disablePush();
+  render();
+  toast('Avisos desativados');
+};
+
 // ---------- Primeiro acesso ----------
 function onboarding() {
   openSheet(`
@@ -1976,6 +2104,9 @@ async function init() {
   setInterval(tick, 1000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && !sheetEl) render(); });
   startWebAlarms(showAlarm);
+  if (state.settings.onboarded) setTimeout(maybeShowWhatsNew, 600); else lsSet(LS_SEEN, VERSION);
+  checkForUpdate();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
   // Recalcula avisos a cada 15 min (virada do dia, alertas do ponto).
   setInterval(syncAlarms, 15 * MIN);
 
@@ -1985,3 +2116,6 @@ async function init() {
 }
 
 init();
+
+ACTIONS.goPush = (_, el, e) => { e?.preventDefault(); $('#push')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+ACTIONS.goPushSettings = () => { go('settings'); setTimeout(() => $('#push')?.scrollIntoView({ block: 'start' }), 50); };

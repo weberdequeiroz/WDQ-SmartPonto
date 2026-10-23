@@ -507,6 +507,26 @@ details.more[open] summary { margin-bottom: 10px; }
 .cal-alert p.small { margin: 6px 0 10px; }
 .steps-list { margin: 14px 0; padding-left: 22px; line-height: 1.6; }
 
+/* ---------- Novidades e atualização ---------- */
+.update-banner { display: flex; align-items: center; gap: 12px; padding: 12px 14px; margin-bottom: 14px; border-radius: 16px; color: #fff; background: linear-gradient(135deg, var(--brand), var(--brand-2)); box-shadow: 0 8px 22px rgba(79, 70, 229, .3); }
+.update-banner .btn { min-height: 38px; padding: 6px 14px; background: #fff; color: var(--brand); border: 0; }
+.update-ico, .news-ico { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex: none; background: rgba(255, 255, 255, .18); }
+.news-hero { margin: 0 -18px 14px; padding: 22px 20px 20px; color: #fff; text-align: center; background: radial-gradient(120% 120% at 50% 0%, #7c3aed 0%, #4338ca 45%, #1e1b4b 100%); border-radius: 22px 22px 0 0; margin-top: -10px; }
+.news-hero h3 { font-size: 22px; margin: 10px 0 4px; }
+.news-hero p { margin: 0; opacity: .8; font-size: 14px; }
+.news-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 99px; background: rgba(255, 255, 255, .16); font-size: 13px; font-weight: 700; }
+.news-badge svg.i { width: 16px; height: 16px; color: #fbbf24; }
+.news-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 14px; }
+.news-item { display: flex; gap: 12px; align-items: flex-start; }
+.news-item .news-ico { background: linear-gradient(140deg, var(--brand), var(--brand-2)); color: #fff; }
+.news-item .news-ico svg.i { width: 20px; height: 20px; }
+.news-item b { display: block; }
+.news-item p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.news-older .news-ver { margin: 12px 0 8px; }
+.news-older .news-item { margin-bottom: 10px; }
+.push-ok { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 14px; background: rgba(21, 128, 61, .1); color: var(--pos); margin-bottom: 10px; }
+.push-ok .small { color: var(--text); }
+
 /* ---------- Painéis (sheets) ---------- */
 .sheet-backdrop {
   position: fixed; inset: 0; z-index: 50; background: rgba(8, 8, 20, .5);

@@ -1,8 +1,8 @@
 // Mantém o app funcionando sem internet. Ao mudar arquivos, aumente a versão.
-const CACHE = 'smartponto-v1.4.2';
+const CACHE = 'smartponto-v1.5.0';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/calc.js', 'js/store.js', 'js/platform.js', 'js/reminders.js', 'js/alarms.js',
+  'js/app.js', 'js/calc.js', 'js/store.js', 'js/platform.js', 'js/reminders.js', 'js/alarms.js', 'js/push.js', 'js/changelog.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png',
 ];
 
@@ -12,7 +12,7 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys()
-    .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== 'sp-push').map((k) => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 
@@ -29,4 +29,34 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match('index.html'))),
   );
+});
+
+// ---------- Avisos do servidor (app fechado) ----------
+// O servidor manda um aviso sem texto; aqui o app busca o texto e mostra a notificação.
+self.addEventListener('push', (e) => { e.waitUntil(showPush(e)); });
+
+async function showPush(e) {
+  let items = [];
+  try { if (e.data) { const d = e.data.json(); items = d.items || [d]; } } catch { /* sem conteúdo */ }
+  if (!items.length) {
+    try {
+      const cfg = await (await (await caches.open('sp-push')).match('config')).json();
+      const url = `${cfg.api}?action=pending&k=${encodeURIComponent(cfg.key)}&e=${encodeURIComponent(cfg.endpoint)}`;
+      items = (await (await fetch(url, { cache: 'no-store' })).json()).items || [];
+    } catch { /* servidor fora do ar */ }
+  }
+  if (!items.length) items = [{ title: 'WDQ SmartPonto', body: 'Você tem um aviso. Abra o app para ver.' }];
+  for (const it of items) {
+    await self.registration.showNotification(it.title || 'WDQ SmartPonto', {
+      body: it.body || '', tag: it.id || undefined, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url: './' },
+    });
+  }
+}
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+    const win = list.find((c) => 'focus' in c);
+    return win ? win.focus() : self.clients.openWindow('./');
+  }));
 });
