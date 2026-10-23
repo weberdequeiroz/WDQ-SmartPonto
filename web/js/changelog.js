@@ -1,6 +1,14 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.9.0', date: '2026-10-24', title: 'Beba água, ganhe pontos',
+    items: [
+      { icon: 'drop', title: 'Controle de água na tela Ponto', text: 'Um copo que enche conforme você bebe. Toque em “Bebi água” a cada copo e acompanhe a semana.' },
+      { icon: 'star', title: 'Meta diária com pontos', text: '10 pontos por dia com a meta batida, bônus por dias seguidos e níveis de Gota a Oceano.' },
+      { icon: 'bell', title: 'Lembrete de beber água', text: 'Em Lembretes, toque em Ativar. Ele avisa de hora em hora no expediente e para quando você bate a meta.' },
+    ],
+  },
+  {
     version: '1.8.0', date: '2026-10-23', title: 'Excluir várias marcações',
     items: [
       { icon: 'check', title: 'Selecionar várias de uma vez', text: 'Em “Marcações de hoje” ou no dia do Histórico, toque em Selecionar, escolha as marcações (ou Todas) e toque em Excluir. Errou? Toque em Desfazer.' },

@@ -7,8 +7,11 @@ import {
 } from './calc.js';
 import {
   state, openStore, addPunch, updatePunch, deletePunch, saveSettings, setDayInfo,
-  markBackup, exportBackup, importBackup, wipeAll, saveReminder, deleteReminder,
+  markBackup, exportBackup, importBackup, wipeAll, saveReminder, deleteReminder, addWater, removeWater, setWaterGoal,
 } from './store.js';
+import {
+  AMOUNTS, totalOf, goalOf, metGoal, fmtWater, waterStats, nextReward, POINTS_GOAL, STREAK_BONUS_MAX, LEVELS,
+} from './water.js';
 import {
   isAndroidApp, isIOS, isStandalone, shareFile, saveFile, printPage, shareText, vibrate, getLocation, setThemeColor,
   nativeAlarmStatus, nativeRequestNotifications, nativeOpenSettings, nativeTestAlarm, openCalendarFile, openCalendarURL,
@@ -28,7 +31,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.8.0';
+export const VERSION = '1.9.0';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -75,6 +78,10 @@ const ICONS = {
   check: '<path d="M20 6L9 17l-5-5"/>',
   home: '<path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
   sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
+  drop: '<path d="M12 2.7s-6.5 7.1-6.5 11.8a6.5 6.5 0 0 0 13 0C18.5 9.8 12 2.7 12 2.7z"/>',
+  flame: '<path d="M12 22c4 0 7-2.8 7-6.8 0-3.6-2.6-6-4.2-8.2-.4 2-1.5 3.3-2.8 3.8.3-3.2-1.2-6.4-4-8.8.2 3.3-3 6.2-3 10.6C5 19 8 22 12 22z"/>',
+  star: '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z"/>',
+  trophy: '<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/>',
   wand: '<path d="M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8L19 13M17.8 6.2L19 5M3 21l9-9M12.2 6.2L11 5"/>',
 };
 const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -403,6 +410,212 @@ function bindPunchPick(root, holder, onDone) {
   paint();
 }
 
+// ---------- Água ----------
+const WEEK_LETTER = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
+const waterGoalNow = () => goalOf(state.water[today()], state.settings.waterGoal);
+
+function waterCardHTML() {
+  if (!state.settings.waterCard) return '';
+  const k = today();
+  const day = state.water[k];
+  const goal = waterGoalNow();
+  const total = totalOf(day);
+  const pct = Math.min(100, Math.round((total / goal) * 100));
+  const st = waterStats(state.water, k, state.settings.waterGoal);
+  const met = total >= goal;
+  const cup = state.settings.waterCup;
+  const left = Math.max(0, goal - total);
+  const cups = Math.ceil(left / cup);
+  return `<section class="card water ${met ? 'met' : ''}">
+    <button class="water-top" data-act="openWater">
+      <span class="glass" style="--fill:${pct}%"><span class="wave"></span><span class="glass-pct">${pct}%</span></span>
+      <span class="grow">
+        <span class="water-k">Água hoje</span>
+        <span class="water-amount"><b>${fmtWater(total)}</b> <span class="muted">de ${fmtWater(goal)}</span></span>
+        <span class="small ${met ? 'water-ok' : 'muted'}">${met ? `${icon('check')} Meta batida! +${st.earned[k]} pontos` : `Faltam ${fmtWater(left)} · ${cups} ${cups === 1 ? 'copo' : 'copos'} · vale +${nextReward(state.water, k, state.settings.waterGoal)} pts`}</span>
+        <span class="water-chips">
+          <span class="wchip ${st.streak ? 'hot' : ''}">${icon('flame')} ${st.streak} ${st.streak === 1 ? 'dia' : 'dias'}</span>
+          <span class="wchip">${icon('star')} ${st.points} pts</span>
+          <span class="wchip">${icon('trophy')} ${st.level.name}</span>
+        </span>
+      </span>
+    </button>
+    <div class="water-week">${st.week.map((w) => `<span class="wd ${w.pct >= 100 ? 'full' : ''} ${w.key === k ? 'today' : ''}" title="${esc(fmtDay(w.key, { year: false }))}: ${fmtWater(w.total)}"><span class="wd-bar"><i style="height:${w.pct}%"></i></span><span class="wd-l">${WEEK_LETTER[parseDay(w.key).getDay()]}</span></span>`).join('')}</div>
+    <div class="water-btns">
+      <button class="btn water-drink" data-act="drink" data-arg="${cup}">${icon('drop')}<span class="drink-txt"><b>Bebi água</b><small>+${fmtWater(cup)}</small></span></button>
+      <button class="btn" data-act="drink" data-arg="500">+500 ml</button>
+      <button class="btn" data-act="openWater" aria-label="Mais opções">${icon('more')}</button>
+    </div>
+  </section>`;
+}
+
+async function drink(ml) {
+  ml = Math.round(Number(ml));
+  if (!(ml > 0)) return;
+  const k = today();
+  const before = waterStats(state.water, k, state.settings.waterGoal);
+  const wasMet = metGoal(state.water[k], state.settings.waterGoal);
+  const prevPct = Math.min(100, Math.round((totalOf(state.water[k]) / waterGoalNow()) * 100));
+  await addWater(k, ml, waterGoalNow());
+  vibrate([30]);
+  render();
+  if (sheetEl?.dataset.water) openWater();
+  else if (ui.view === 'home') {
+    // Enche o copo aos poucos, a partir do nível anterior.
+    const g = $('#view .glass');
+    const pct = g?.style.getPropertyValue('--fill');
+    if (g) {
+      g.style.setProperty('--fill', `${prevPct}%`);
+      requestAnimationFrame(() => requestAnimationFrame(() => g.style.setProperty('--fill', pct)));
+    }
+  }
+  const after = waterStats(state.water, k, state.settings.waterGoal);
+  if (!wasMet && metGoal(state.water[k], state.settings.waterGoal)) {
+    celebrateWater(after.earned[k], after.streak, after.level.index > before.level.index ? after.level : null);
+    return;
+  }
+  toast(`+${fmtWater(ml)} · ${fmtWater(totalOf(state.water[k]))} hoje`, {
+    label: 'Desfazer',
+    run: async () => {
+      const last = state.water[k]?.log.at(-1);
+      if (last) await removeWater(k, last.ts);
+      if (sheetEl?.dataset.water) openWater(); else render();
+    },
+  });
+}
+ACTIONS.drink = (ml) => drink(ml);
+
+/** Lembrete de água com a meta de hoje batida: o próximo aviso é só amanhã. */
+const remFrom = (r, now) => (r.kind === 'water' && metGoal(state.water[today()], state.settings.waterGoal)
+  ? Math.max(now, parseDay(addDays(today(), 1)).getTime()) : now);
+
+/** Comemoração ao bater a meta: gotas caindo e os pontos ganhos. */
+function celebrateWater(points, streak, newLevel) {
+  vibrate([40, 60, 40, 60, 120]);
+  const el = document.createElement('div');
+  el.className = 'water-party';
+  el.innerHTML = `${Array.from({ length: 18 }, (_, i) => `<i style="left:${(i * 5.7 + (i % 3) * 3) % 100}%;animation-delay:${(i % 6) * 0.12}s;animation-duration:${1.4 + (i % 4) * 0.25}s"></i>`).join('')}
+    <div class="party-card">
+      <div class="party-ico">${icon('drop')}</div>
+      <b>Meta do dia batida!</b>
+      <div class="party-pts">+${points} pontos</div>
+      <div class="small">${streak > 1 ? `${icon('flame')} ${streak} dias seguidos. Continue amanhã!` : 'Volte amanhã para começar uma sequência.'}</div>
+      ${newLevel ? `<div class="party-level">${icon('trophy')} Novo nível: <b>${esc(newLevel.name)}</b></div>` : ''}
+    </div>`;
+  document.body.appendChild(el);
+  const close = () => el.remove();
+  el.addEventListener('click', close);
+  setTimeout(close, 4200);
+}
+
+function waterReminder() {
+  return state.reminders.find((r) => r.kind === 'water');
+}
+
+/** Cria o lembrete de água no horário do expediente (dias úteis, de hora em hora). */
+async function createWaterReminder() {
+  let shift = null;
+  for (let i = 0; i < 14 && !shift?.in; i++) shift = shiftFor(addDays(today(), i), state.settings);
+  const from = shift?.in || '09:00';
+  const to = shift?.out ? minutesToHHMM(Math.max(parseHHMM(from), parseHHMM(shift.out) - 30)) : '17:00';
+  const base = newReminder();
+  const r = await saveReminder({
+    ...base, title: 'Beber água', kind: 'water', style: 'notify', jornadaOnly: true,
+    rule: { ...base.rule, type: 'hourly', from, to, everyMin: 60, days: [0, 1, 2, 3, 4, 5, 6] },
+  });
+  if (isAndroidApp && nativeAlarmStatus()?.notifications === false) nativeRequestNotifications();
+  toast(`Lembrete criado: ${describe(r)}`);
+  return r;
+}
+ACTIONS.waterReminder = async () => { await createWaterReminder(); render(); };
+
+function openWater() {
+  const k = today();
+  const day = state.water[k];
+  const s = state.settings;
+  const goal = waterGoalNow();
+  const total = totalOf(day);
+  const st = waterStats(state.water, k, s.waterGoal);
+  const lv = st.level;
+  const rem = waterReminder();
+  const log = [...(day?.log || [])].sort((a, b) => b.ts - a.ts);
+  const sheet = openSheet(`
+    <div class="fill-head">
+      <span class="fill-ico water-ico">${icon('drop')}</span>
+      <div><h3>Água</h3><p class="sub" style="margin:0"><b>${fmtWater(total)}</b> de ${fmtWater(goal)} hoje</p></div>
+    </div>
+
+    <div class="level-box">
+      <div class="row between"><b>${icon('trophy')} Nível ${esc(lv.name)}</b><span class="small"><b>${st.points}</b> pts</span></div>
+      <div class="progress"><div style="width:${lv.pct}%"></div></div>
+      <div class="small muted">${lv.next ? `Faltam ${lv.next.min - st.points} pontos para ${esc(lv.next.name)}` : 'Você chegou ao nível máximo!'} · ${icon('flame')} sequência de ${st.streak} (recorde ${st.best})</div>
+    </div>
+
+    <h4 class="sheet-sub">Quanto você bebeu?</h4>
+    <div class="amount-grid">${AMOUNTS.map((ml) => `<button class="btn" data-ml="${ml}">${fmtWater(ml)}</button>`).join('')}</div>
+    <div class="row" style="gap:8px;margin:8px 0 4px">
+      <input class="input" type="number" min="10" max="3000" step="10" inputmode="numeric" placeholder="Outro valor (ml)" data-custom>
+      <button class="btn primary" data-add-custom>Adicionar</button>
+    </div>
+
+    ${log.length ? `<h4 class="sheet-sub">Hoje</h4>
+    <ul class="water-log">${log.map((e) => `<li><span class="time">${hhmm(e.ts)}</span><span class="grow">${icon('drop')} ${fmtWater(e.ml)}</span><button class="link" data-del-ts="${e.ts}" aria-label="Apagar">${icon('trash')}</button></li>`).join('')}</ul>` : ''}
+
+    <h4 class="sheet-sub">Sua meta</h4>
+    <div class="grid-2">
+      <label class="field"><span>Meta diária (ml)</span><input class="input" type="number" min="500" max="6000" step="50" inputmode="numeric" data-goal value="${s.waterGoal}"></label>
+      <label class="field"><span>Seu peso (kg) para sugerir</span><input class="input" type="number" min="30" max="250" inputmode="numeric" data-weight placeholder="Ex.: 70"></label>
+    </div>
+    <p class="small muted" data-hint style="margin:-4px 0 10px">Referência comum: 35 ml por kg de peso. Siga a orientação do seu médico.</p>
+    <label class="field"><span>Tamanho do seu copo (botão “Bebi água”)</span>
+      <select class="input" data-cup>${[150, 200, 250, 300, 350, 400, 500].map((ml) => `<option value="${ml}" ${s.waterCup === ml ? 'selected' : ''}>${fmtWater(ml)}</option>`).join('')}</select>
+    </label>
+    <label class="switch"><span><b>Mostrar na tela Ponto</b><br><span class="small muted">Cartão com o copo, a meta e a sequência</span></span><input type="checkbox" data-card ${s.waterCard ? 'checked' : ''}></label>
+
+    <h4 class="sheet-sub">Lembrete</h4>
+    ${rem ? `<button class="list-btn" data-rem>${icon('bell')}<span class="grow"><b>${esc(rem.title)}</b>${rem.active ? '' : ' (pausado)'}<br><span class="small muted">${esc(describe(rem))}</span></span>${icon('right', 'muted')}</button>`
+    : `<button class="btn block" data-new-rem>${icon('bell')} Criar lembrete de beber água</button>`}
+    <p class="small muted">Quando você bate a meta, os lembretes do dia param sozinhos.</p>
+
+    <div class="points-help small muted">${icon('star')} <b>Pontos:</b> ${POINTS_GOAL} por dia com a meta batida, mais 1 por dia seguido de sequência (até +${STREAK_BONUS_MAX}). Níveis: ${LEVELS.map((l) => esc(l.name)).join(' → ')}.</div>
+    <div class="btn-row"><button class="btn" data-close>Fechar</button></div>`, (sh) => {
+    $$('[data-ml]', sh).forEach((b) => b.addEventListener('click', () => drink(b.dataset.ml)));
+    $('[data-add-custom]', sh).addEventListener('click', () => {
+      const v = Number($('[data-custom]', sh).value);
+      if (!(v >= 10 && v <= 3000)) return toast('Digite entre 10 e 3000 ml');
+      drink(v);
+    });
+    $$('[data-del-ts]', sh).forEach((b) => b.addEventListener('click', async () => {
+      await removeWater(k, Number(b.dataset.delTs));
+      openWater();
+      render();
+    }));
+    const setGoal = async (v) => {
+      v = Math.round(v / 50) * 50;
+      if (!(v >= 500 && v <= 6000)) return toast('Meta entre 500 e 6000 ml');
+      await saveSettings({ waterGoal: v });
+      await setWaterGoal(k, v);
+      $('[data-goal]', sh).value = v;
+      $('.sub', sh).innerHTML = `<b>${fmtWater(totalOf(state.water[k]))}</b> de ${fmtWater(v)} hoje`;
+      render();
+    };
+    $('[data-goal]', sh).addEventListener('change', (e) => setGoal(Number(e.target.value)));
+    $('[data-weight]', sh).addEventListener('change', (e) => {
+      const kg = Number(e.target.value);
+      if (!(kg >= 30 && kg <= 250)) return;
+      const v = Math.round((kg * 35) / 50) * 50;
+      $('[data-hint]', sh).innerHTML = `Sugestão para ${kg} kg: <b>${fmtWater(v)}</b> por dia. <button class="link" data-use>Usar</button>`;
+      $('[data-use]', sh).addEventListener('click', () => setGoal(v));
+    });
+    $('[data-cup]', sh).addEventListener('change', async (e) => { await saveSettings({ waterCup: Number(e.target.value) }); render(); });
+    $('[data-card]', sh).addEventListener('change', async (e) => { await saveSettings({ waterCard: e.target.checked }); render(); });
+    $('[data-rem]', sh)?.addEventListener('click', () => openReminderEditor(rem));
+    $('[data-new-rem]', sh)?.addEventListener('click', async () => { await createWaterReminder(); openWater(); render(); });
+  });
+  sheet.parentElement.dataset.water = '1';
+}
+ACTIONS.openWater = () => openWater();
+
 // ---------- Tela: Ponto ----------
 function greeting() {
   const h = new Date().getHours();
@@ -474,6 +687,8 @@ function renderHome() {
           ${icon(t)}<strong>${label(t)}</strong><span>${ACTION_HINT[t]}</span>
         </button>`).join('')}
     </section>
+
+    ${waterCardHTML()}
 
     <section class="card">
       <h2>Hoje</h2>
@@ -1503,6 +1718,11 @@ function renderSettings() {
     </section>
 
     <section class="card">
+      <h2>Água</h2>
+      <button class="list-btn" data-act="openWater">${icon('drop')}<span class="grow"><b>Controle de água</b><br><span class="small muted">Meta de ${fmtWater(s.waterGoal)} por dia · copo de ${fmtWater(s.waterCup)}${s.waterCard ? '' : ' · oculto na tela Ponto'}</span></span>${icon('right', 'muted')}</button>
+    </section>
+
+    <section class="card">
       <h2>Backup e dados</h2>
       <p class="small muted" style="margin-top:0">Seus dados ficam só neste aparelho. Faça backup com frequência e guarde o arquivo no Google Drive, iCloud, e-mail ou WhatsApp. Último backup: <b>${lastBackup}</b>.</p>
       <button class="list-btn" data-act="backup">${icon('share')}<span class="grow"><b>Fazer backup e enviar</b><br><span class="small muted">Drive, iCloud, e-mail, WhatsApp…</span></span></button>
@@ -1650,7 +1870,7 @@ function permissionBanner() {
 function renderReminders() {
   const now = Date.now();
   const ctx = reminderCtx();
-  const items = state.reminders.map((r) => ({ r, next: r.active ? nextOccurrence(r, now, ctx) : null }));
+  const items = state.reminders.map((r) => ({ r, next: r.active ? nextOccurrence(r, remFrom(r, now), ctx) : null }));
   const active = items.filter((x) => x.r.active && x.next).sort((a, b) => a.next.at - b.next.at);
   const ended = items.filter((x) => x.r.active && !x.next);
   const paused = items.filter((x) => !x.r.active);
@@ -1672,6 +1892,11 @@ function renderReminders() {
   return `
     <button class="btn primary block big-btn" data-act="newReminder">${icon('plus')} Criar lembrete</button>
     ${permissionBanner()}
+    ${state.reminders.some((r) => r.kind === 'water') ? '' : `<div class="card water-promo">
+      <span class="water-promo-ico">${icon('drop')}</span>
+      <span class="grow"><b>Lembrete de beber água</b><br><span class="small muted">Avisa de hora em hora no expediente e para sozinho quando você bate a meta do dia.</span></span>
+      <button class="btn primary" data-act="waterReminder">Ativar</button>
+    </div>`}
     ${state.reminders.length ? '' : `<div class="card empty-rem">
       ${icon('bell')}
       <b>Nenhum lembrete ainda</b>
@@ -1691,7 +1916,7 @@ function renderReminders() {
 
 const QUICK_REMINDERS = [
   { title: 'Enviar relatório mensal', time: '09:00', rule: { type: 'monthBusinessDay', nth: 1 } },
-  { title: 'Beber água', time: '09:00', style: 'notify', businessOnly: true, rule: { type: 'hourly', from: '09:00', to: '17:00', everyMin: 60, days: [1, 2, 3, 4, 5] } },
+  { title: 'Beber água', kind: 'water', time: '09:00', style: 'notify', businessOnly: true, rule: { type: 'hourly', from: '09:00', to: '17:00', everyMin: 60, days: [1, 2, 3, 4, 5] } },
   { title: 'Reunião de equipe', time: '09:00', advance: 10, rule: { type: 'week', days: [1] } },
   { title: 'Pagar contas', time: '10:00', rule: { type: 'monthDay', day: 5, adjust: 'before' } },
   { title: 'Alongar e descansar a vista', time: '10:00', style: 'notify', rule: { type: 'hourly', from: '10:00', to: '17:00', everyMin: 120, days: [1, 2, 3, 4, 5] } },
@@ -1971,7 +2196,8 @@ function showAlarm(a) {
       <div class="alarm-text">${esc(a.body || '')}</div>
     </div>
     <div class="alarm-actions">
-      <button class="alarm-done" data-done>${icon('check')} Concluir</button>
+      ${a.water ? `<button class="alarm-done alarm-drink" data-drink>${icon('drop')} Bebi água · ${fmtWater(state.settings.waterCup)}</button>` : ''}
+      <button class="alarm-done ${a.water ? 'alarm-sec' : ''}" data-done>${icon('check')} ${a.water ? 'Agora não' : 'Concluir'}</button>
       <div class="alarm-snooze">
         ${[5, 10, 30].map((m) => `<button data-snooze="${m}">Adiar ${m} min</button>`).join('')}
       </div>
@@ -1985,6 +2211,7 @@ function showAlarm(a) {
     if (alarmQueue.length) showAlarm(alarmQueue.shift());
   };
   $('[data-done]', alarmEl).addEventListener('click', close);
+  $('[data-drink]', alarmEl)?.addEventListener('click', () => { close(); drink(state.settings.waterCup); });
   $$('[data-snooze]', alarmEl).forEach((b) => b.addEventListener('click', () => {
     snoozeWeb(a, Number(b.dataset.snooze));
     toast(`Adiado por ${b.dataset.snooze} min`);

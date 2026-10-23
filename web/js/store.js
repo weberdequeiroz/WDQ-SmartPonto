@@ -13,6 +13,7 @@ export const state = {
   settings: { ...DEFAULT_SETTINGS },
   dayInfo: {},
   reminders: [],
+  water: {}, // 'AAAA-MM-DD' → { log: [{ ts, ml }], goal, updatedAt }
   meta: { lastBackup: null, createdAt: null },
   tombs: {}, // 'kind:id' → quando foi excluído
 };
@@ -62,14 +63,16 @@ export async function openStore() {
     r.onerror = () => reject(r.error);
   });
   const { t } = tx(['punches', 'kv']);
-  const [punches, settings, dayInfo, meta, reminders, tombs] = await Promise.all([
+  const [punches, settings, dayInfo, meta, reminders, tombs, water] = await Promise.all([
     req(t.objectStore('punches').getAll()),
     req(t.objectStore('kv').get('settings')),
     req(t.objectStore('kv').get('dayInfo')),
     req(t.objectStore('kv').get('meta')),
     req(t.objectStore('kv').get('reminders')),
     req(t.objectStore('kv').get('tombstones')),
+    req(t.objectStore('kv').get('water')),
   ]);
+  state.water = water || {};
   state.tombs = tombs || {};
   state.reminders = reminders || [];
   state.punches = punches.sort((a, b) => a.ts - b.ts);
@@ -177,6 +180,32 @@ export async function deleteReminder(id) {
   changed();
 }
 
+// Água: cada dia é um registro; na conta vai como 'dayinfo' com id 'water:AAAA-MM-DD'.
+export const WATER_PREFIX = 'water:';
+
+export async function addWater(key, ml, goal) {
+  const day = state.water[key] || { log: [] };
+  state.water[key] = { ...day, goal, log: [...day.log, { ts: Date.now(), ml }], updatedAt: Date.now() };
+  await putKV('water', state.water);
+  changed();
+}
+
+export async function removeWater(key, ts) {
+  const day = state.water[key];
+  if (!day) return;
+  state.water[key] = { ...day, log: day.log.filter((e) => e.ts !== ts), updatedAt: Date.now() };
+  await putKV('water', state.water);
+  changed();
+}
+
+/** Ajusta a meta de hoje quando o usuário muda a meta diária (os dias passados mantêm a meta da época). */
+export async function setWaterGoal(key, goal) {
+  if (!state.water[key]) return;
+  state.water[key] = { ...state.water[key], goal, updatedAt: Date.now() };
+  await putKV('water', state.water);
+  changed();
+}
+
 export async function markBackup() {
   state.meta.lastBackup = Date.now();
   await putKV('meta', state.meta);
@@ -190,6 +219,7 @@ export function exportBackup() {
     settings: state.settings,
     dayInfo: state.dayInfo,
     reminders: state.reminders,
+    water: state.water,
     punches: state.punches,
   };
 }
@@ -220,8 +250,13 @@ export async function importBackup(data, mode = 'merge') {
     reminders = [...byId.values()];
   }
   t.objectStore('kv').put(reminders, 'reminders');
+  const inWater = data.water && typeof data.water === 'object' ? data.water : {};
+  const water = mode === 'replace' ? inWater : { ...inWater, ...state.water };
+  t.objectStore('kv').put(water, 'water');
   await done;
   state.reminders = reminders;
+  state.water = Object.fromEntries(Object.entries(water).map(([k, v]) => [k, { ...v, updatedAt: nowTs }]));
+  await putKV('water', state.water);
 
   if (mode === 'replace') state.punches = valid;
   else {
@@ -247,6 +282,7 @@ export async function wipeAll() {
   state.settings = withPlan({ ...DEFAULT_SETTINGS });
   state.dayInfo = {};
   state.reminders = [];
+  state.water = {};
   state.tombs = {};
   state.meta = { lastBackup: null, createdAt: Date.now() };
   await putKV('meta', state.meta);
@@ -260,6 +296,7 @@ export function collectChanges(since, { includeSettings = true } = {}) {
   for (const p of state.punches) if (updatedOf(p) > since) out.push({ kind: 'punch', id: p.id, data: p, updated: updatedOf(p) });
   for (const r of state.reminders) if (updatedOf(r) > since) out.push({ kind: 'reminder', id: r.id, data: r, updated: updatedOf(r) });
   for (const [k, v] of Object.entries(state.dayInfo)) if (updatedOf(v) > since) out.push({ kind: 'dayinfo', id: k, data: v, updated: updatedOf(v) });
+  for (const [k, v] of Object.entries(state.water)) if (updatedOf(v) > since) out.push({ kind: 'dayinfo', id: WATER_PREFIX + k, data: v, updated: updatedOf(v) });
   for (const [key, at] of Object.entries(state.tombs)) {
     if (at > since) { const [kind, ...rest] = key.split(':'); out.push({ kind, id: rest.join(':'), deleted: true, updated: at }); }
   }
@@ -294,7 +331,9 @@ export async function applyRemote(rows, { forceSettings = false } = {}) {
       }
       continue;
     }
-    const local = r.kind === 'punch' ? punchById.get(r.id) : r.kind === 'reminder' ? remById.get(r.id) : state.dayInfo[r.id];
+    const isWater = r.kind === 'dayinfo' && String(r.id).startsWith(WATER_PREFIX);
+    const waterKey = isWater ? r.id.slice(WATER_PREFIX.length) : '';
+    const local = r.kind === 'punch' ? punchById.get(r.id) : r.kind === 'reminder' ? remById.get(r.id) : isWater ? state.water[waterKey] : state.dayInfo[r.id];
     const localAt = Math.max(local ? updatedOf(local) : 0, tombAt);
     if (r.updated <= localAt) continue;
     n++;
@@ -302,14 +341,16 @@ export async function applyRemote(rows, { forceSettings = false } = {}) {
       state.tombs[key] = r.updated;
       if (r.kind === 'punch') { punchById.delete(r.id); ps.delete(r.id); }
       if (r.kind === 'reminder') remById.delete(r.id);
-      if (r.kind === 'dayinfo') delete state.dayInfo[r.id];
+      if (isWater) delete state.water[waterKey];
+      else if (r.kind === 'dayinfo') delete state.dayInfo[r.id];
       continue;
     }
     delete state.tombs[key];
     const data = { ...r.data, updatedAt: r.updated };
     if (r.kind === 'punch') { punchById.set(r.id, data); ps.put(data); }
     if (r.kind === 'reminder') remById.set(r.id, data);
-    if (r.kind === 'dayinfo') state.dayInfo[r.id] = data;
+    if (isWater) state.water[waterKey] = data;
+    else if (r.kind === 'dayinfo') state.dayInfo[r.id] = data;
   }
   state.punches = [...punchById.values()].sort((a, b) => a.ts - b.ts);
   state.reminders = [...remById.values()];
@@ -317,6 +358,7 @@ export async function applyRemote(rows, { forceSettings = false } = {}) {
   kv.put(withPlan({ ...DEFAULT_SETTINGS, ...state.settings }), 'settings');
   kv.put(state.dayInfo, 'dayInfo');
   kv.put(state.reminders, 'reminders');
+  kv.put(state.water, 'water');
   kv.put(state.tombs, 'tombstones');
   kv.put(state.meta, 'meta');
   await done;

@@ -577,6 +577,10 @@ export const DEFAULT_SETTINGS = {
   geolocation: false,
   theme: 'system',
   backupReminderDays: 7,
+  // Água: meta diária (ml), tamanho do copo e se o cartão aparece na tela Ponto.
+  waterGoal: 2000,
+  waterCup: 250,
+  waterCard: true,
   // Modalidade
   defaultMode: 'presencial',
   askMode: false,

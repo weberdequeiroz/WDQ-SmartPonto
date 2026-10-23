@@ -8,6 +8,7 @@ import {
 import { occurrences, describe } from './reminders.js';
 import { isAndroidApp, nativeSetAlarms } from './platform.js';
 import { syncPush } from './push.js';
+import { metGoal, fmtWater, goalOf } from './water.js';
 
 const HORIZON = 45 * 24 * HOUR;
 const MAX_ALARMS = 500;
@@ -77,15 +78,22 @@ export function upcomingAlarms(from = Date.now(), to = from + HORIZON) {
   const ctx = reminderCtx();
   const list = [];
   for (const rem of state.reminders) {
+    const water = rem.kind === 'water';
     for (const o of occurrences(rem, from, to, ctx)) {
       const when = hhmm(o.eventAt);
+      const day = dayKey(o.at);
+      // Água: com a meta do dia batida, os avisos daquele dia param.
+      if (water && metGoal(state.water[day], state.settings.waterGoal)) continue;
       list.push({
         id: `${rem.id}@${o.at}`,
         rid: rem.id,
         at: o.at,
         title: rem.title || 'Lembrete',
-        body: rem.notes ? `${when} · ${rem.notes}` : `${when} · ${describe(rem)}`,
+        body: water
+          ? (rem.notes || `Hora de um copo d'água. Meta do dia: ${fmtWater(goalOf(state.water[day], state.settings.waterGoal))}.`)
+          : rem.notes ? `${when} · ${rem.notes}` : `${when} · ${describe(rem)}`,
         style: rem.style || 'alarm',
+        ...(water ? { water: true } : {}),
       });
     }
   }

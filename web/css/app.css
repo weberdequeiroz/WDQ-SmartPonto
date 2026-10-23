@@ -606,3 +606,80 @@ details.more[open] summary { margin-bottom: 10px; }
   .p-sign div { border-top: 1px solid #000; padding-top: 4px; }
   .p-foot { margin-top: 18px; font-size: 9px; color: #666; text-align: center; }
 }
+
+/* ---------- Água ---------- */
+:root { --water: #0ea5e9; --water-2: #38bdf8; --water-deep: #0369a1; }
+.card.water { background: linear-gradient(160deg, rgba(14, 165, 233, .10), rgba(79, 70, 229, .06)) , var(--surface); }
+.card.water.met { border-color: rgba(34, 197, 94, .45); }
+.water-top { display: flex; align-items: center; gap: 16px; width: 100%; background: none; border: 0; padding: 0; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.water-top .grow { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.water-k { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; }
+.water-amount b { font-size: 26px; font-weight: 800; }
+.water-ok { color: var(--pos, #16a34a); font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+.water-ok svg.i { width: 16px; height: 16px; stroke-width: 3; }
+.glass {
+  --fill: 0%;
+  position: relative; flex: none; width: 66px; height: 86px; overflow: hidden;
+  border: 3px solid rgba(56, 189, 248, .55); border-top-width: 2px; border-radius: 6px 6px 20px 20px;
+  background: rgba(56, 189, 248, .07); box-shadow: inset 0 0 0 3px rgba(255, 255, 255, .04);
+}
+.glass .wave {
+  position: absolute; left: 0; right: 0; bottom: 0; height: var(--fill);
+  background: linear-gradient(180deg, var(--water-2), var(--water-deep)); transition: height .9s cubic-bezier(.2, .8, .2, 1);
+}
+.glass .wave::before {
+  content: ""; position: absolute; left: 0; top: -7px; width: 200%; height: 8px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 8'%3E%3Cpath d='M0 4 Q10 0 20 4 T40 4 V8 H0z' fill='%2338bdf8'/%3E%3C/svg%3E") repeat-x;
+  background-size: 33px 8px; animation: wave 2.4s linear infinite;
+}
+.glass-pct { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 800; font-size: 15px; color: #fff; text-shadow: 0 1px 3px rgba(2, 6, 23, .6); }
+@keyframes wave { to { transform: translateX(-33px); } }
+.water-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.wchip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--border); }
+.wchip svg.i { width: 14px; height: 14px; color: var(--water); }
+.wchip.hot svg.i { color: #f97316; fill: rgba(249, 115, 22, .25); }
+.water-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin: 14px 0 12px; }
+.wd { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.wd-bar { width: 100%; max-width: 30px; height: 34px; border-radius: 8px; background: var(--surface-2); overflow: hidden; display: flex; align-items: flex-end; }
+.wd-bar i { display: block; width: 100%; background: linear-gradient(180deg, var(--water-2), var(--water)); border-radius: 6px; }
+.wd.full .wd-bar i { background: linear-gradient(180deg, #4ade80, #16a34a); }
+.wd-l { font-size: 11px; font-weight: 700; color: var(--muted); }
+.wd.today .wd-l { color: var(--water); }
+.wd.today .wd-bar { outline: 2px solid rgba(14, 165, 233, .5); outline-offset: 1px; }
+.water-btns { display: flex; gap: 8px; }
+.water-btns .btn { min-height: 48px; }
+.water-drink { flex: 1; color: #fff !important; border: 0 !important; background: linear-gradient(135deg, var(--water-2), var(--water-deep)) !important; box-shadow: 0 6px 18px rgba(14, 165, 233, .35); }
+.drink-txt { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.15; white-space: nowrap; }
+.drink-txt small { opacity: .85; font-weight: 600; font-size: 12px; }
+.water-drink:active { transform: scale(.97); }
+.water-promo { display: flex; align-items: center; gap: 12px; }
+.water-promo-ico, .water-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; flex: none; color: #fff; background: linear-gradient(135deg, var(--water-2), var(--water-deep)); }
+.water-promo-ico svg.i, .water-ico svg.i { width: 24px; height: 24px; }
+.level-box { background: var(--surface-2); border-radius: 16px; padding: 12px 14px; margin: 12px 0 6px; }
+.level-box b svg.i, .level-box .small svg.i { width: 15px; height: 15px; vertical-align: -2px; }
+.level-box .progress > div { background: linear-gradient(90deg, var(--water-2), var(--brand)); }
+.sheet-sub { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+.amount-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.amount-grid .btn { min-height: 46px; }
+.water-log { list-style: none; margin: 0; padding: 0; }
+.water-log li { display: flex; align-items: center; gap: 12px; padding: 6px 2px; border-bottom: 1px solid var(--border); }
+.water-log li:last-child { border-bottom: 0; }
+.water-log .time { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 48px; }
+.water-log svg.i { width: 15px; height: 15px; color: var(--water); vertical-align: -2px; }
+.points-help { background: var(--surface-2); border-radius: 12px; padding: 10px 12px; margin: 14px 0; }
+.points-help svg.i { width: 14px; height: 14px; color: #f59e0b; vertical-align: -2px; }
+.water-party { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: rgba(2, 6, 23, .55); backdrop-filter: blur(3px); animation: fadein .2s ease-out; overflow: hidden; }
+.water-party i { position: absolute; top: -30px; width: 14px; height: 18px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; background: linear-gradient(180deg, var(--water-2), var(--water)); opacity: .9; animation: dropfall linear infinite; }
+@keyframes dropfall { to { transform: translateY(110vh); } }
+@keyframes fadein { from { opacity: 0; } }
+.party-card { position: relative; text-align: center; padding: 26px 30px; border-radius: 24px; color: #fff; max-width: 300px;
+  background: linear-gradient(160deg, var(--water-2), var(--water-deep) 70%, #312e81); box-shadow: 0 20px 60px rgba(14, 165, 233, .45); animation: pop .5s cubic-bezier(.2, 1.4, .4, 1); }
+.party-card b { display: block; font-size: 21px; margin-top: 6px; }
+.party-ico { width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, .18); }
+.party-ico svg.i { width: 36px; height: 36px; fill: rgba(255, 255, 255, .35); }
+.party-pts { font-size: 34px; font-weight: 900; margin: 6px 0; letter-spacing: -.5px; }
+.party-card .small svg.i, .party-level svg.i { width: 15px; height: 15px; vertical-align: -2px; }
+.party-level { margin-top: 10px; padding: 6px 12px; border-radius: 99px; background: rgba(255, 255, 255, .16); font-size: 14px; display: inline-block; }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } }
+.alarm-drink { background: linear-gradient(135deg, var(--water-2), var(--water-deep)) !important; color: #fff !important; margin-bottom: 10px; }
+.alarm-sec { background: rgba(255, 255, 255, .12) !important; color: #fff !important; }
