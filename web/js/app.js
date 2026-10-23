@@ -27,7 +27,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.6.0';
+export const VERSION = '1.6.1';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -2007,15 +2007,15 @@ function pushCardHTML() {
   const notInstalled = isIOS && !isStandalone;
   return `<section class="card" id="push">
     <h2>Avisos com o app fechado</h2>
-    <p class="small" style="margin-top:0">Com um servidor seu (ex.: Hostinger), o ${isIOS ? 'iPhone' : 'celular'} recebe os lembretes e alertas do ponto mesmo com o app fechado e a tela bloqueada.</p>
+    <p class="small" style="margin-top:0">${serverLink() ? 'Ative para o' : 'Com um servidor seu (ex.: Hostinger), o'} ${isIOS ? 'iPhone' : 'celular'} receber os lembretes e alertas do ponto mesmo com o app fechado e a tela bloqueada.</p>
     ${!pushSupported() || notInstalled ? `<div class="banner">${icon('info')}<span>${notInstalled ? 'Primeiro instale o app: Compartilhar → Adicionar à Tela de Início, e abra por lá.' : 'Este navegador não aceita notificações. No iPhone, use iOS 16.4 ou mais novo.'}</span></div>` : `
-    <label class="field"><span>Link do servidor de avisos</span><input class="input" data-push-link placeholder="https://seusite.com/smartponto-push/api.php?k=…" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    ${serverLink() ? '' : `<label class="field"><span>Link do servidor de avisos</span><input class="input" data-push-link placeholder="https://seusite.com/smartponto-push/api.php?k=…" autocapitalize="off" autocorrect="off" spellcheck="false"></label>`}
     <button class="btn primary block" data-act="pushOn">${icon('bell')} Ativar avisos</button>`}
-    <p class="small muted" style="margin:10px 0 0">Como instalar o servidor: <a href="${guide}" target="_blank" rel="noopener">guia passo a passo</a>.</p>
+    ${serverLink() ? '' : `<p class="small muted" style="margin:10px 0 0">Como instalar o servidor: <a href="${guide}" target="_blank" rel="noopener">guia passo a passo</a>.</p>`}
   </section>`;
 }
 ACTIONS.pushOn = async () => {
-  const link = $('[data-push-link]')?.value || '';
+  const link = $('[data-push-link]')?.value || serverLink();
   if (!link.trim()) return toast('Cole o link do servidor');
   toast('Ativando…');
   try {

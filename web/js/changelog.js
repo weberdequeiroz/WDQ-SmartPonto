@@ -1,6 +1,13 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.6.1', date: '2026-10-23', title: 'Servidor WDQ Brasil',
+    items: [
+      { icon: 'user', title: 'Entrar ficou mais fácil', text: 'Em Ajustes → Minha conta, basta digitar o e-mail e o código recebido.' },
+      { icon: 'bell', title: 'Avisos com um toque', text: 'Em Ajustes → Avisos com o app fechado, toque em Ativar avisos e permita as notificações.' },
+    ],
+  },
+  {
     version: '1.6.0', date: '2026-10-23', title: 'Sua conta, em todos os aparelhos',
     items: [
       { icon: 'user', title: 'Entrar com e-mail', text: 'Receba um código no e-mail e entre. Sem senha para lembrar.' },

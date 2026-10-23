@@ -4,7 +4,7 @@ import { state, getKV, putKV, collectChanges, applyRemote, setOnChange } from '.
 import { parseLink } from './push.js';
 
 // Servidor padrão do app. Preencha com o link da página de instalação para que os usuários só digitem o e-mail.
-export const DEFAULT_SERVER = '';
+export const DEFAULT_SERVER = 'https://wdqbrasil.com.br/smartponto-push/api.php?k=7a99dd29c3bc2bb701b35745b9fae5a2';
 
 let account = null; // { server, email, token }
 let meta = { rev: 0, pushedAt: 0, lastSync: 0, firstDone: false };
