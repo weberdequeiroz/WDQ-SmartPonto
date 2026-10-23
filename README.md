@@ -57,7 +57,7 @@ Opcionais, em Ajustes: lembrar de marcar a entrada, fim do intervalo de refeiç�
 ## Alarmes no Android e no iPhone
 
 - **Android (APK):** os avisos tocam com o app fechado, na tela bloqueada e depois de reiniciar o celular. Na tela Lembretes, o app mostra quais permissões faltam (notificações, alarme exato, tela cheia, economia de bateria) com um botão para cada uma.
-- **iPhone / navegador:** o alarme toca com o app aberto. Para ser avisado com ele fechado, toque em **Adicionar à agenda**: a Agenda do iPhone recebe o lembrete com a mesma repetição e avisa na tela bloqueada.
+- **iPhone / navegador:** o iOS pausa apps instalados pelo Safari quando saem da tela, então os avisos só tocam com o app aberto. Para avisar com o celular bloqueado: **Ajustes → Alertas do ponto → Adicionar alertas do ponto à Agenda** (entrada, almoço, volta e saída, repetindo pelo seu horário ou escala) e, nos lembretes, **Adicionar à agenda**.
 
 ## Backup
 

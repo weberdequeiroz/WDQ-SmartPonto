@@ -96,14 +96,17 @@ export function nativeRequestNotifications() { bridge?.requestNotifications?.();
 export function nativeOpenSettings(kind) { bridge?.openSettings?.(kind); }
 export function nativeTestAlarm(style, title, body) { bridge?.testAlarm?.(style, title, body); }
 
-/** Abre um arquivo .ics: no iPhone, o Safari oferece "Adicionar à Agenda"; no Android, abre a agenda. */
+/** Abre um arquivo .ics. No APK vai direto para a agenda; no iPhone o app mostra um painel (calendarSheet). */
 export async function openCalendarFile(name, text) {
-  if (bridge?.openCalendar) { bridge.openCalendar(name, text); return; }
-  if (isIOS) {
-    // Navegar até o arquivo faz o iOS mostrar a prévia com o botão "Adicionar Tudo".
-    const url = `data:text/calendar;charset=utf-8,${encodeURIComponent(text)}`;
-    window.location.href = url;
-    return;
-  }
+  if (bridge?.openCalendar) { bridge.openCalendar(name, text); return 'android'; }
+  if (isIOS) return 'ios';
   await shareFile(name, 'text/calendar', text);
+  return 'shared';
+}
+
+/** iPhone: abre o arquivo pelo Safari, que mostra a prévia com "Adicionar Todos". */
+export function openCalendarURL(text) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/calendar' }));
+  window.location.assign(url);
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }

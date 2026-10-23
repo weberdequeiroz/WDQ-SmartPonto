@@ -11,16 +11,16 @@ import {
 } from './store.js';
 import {
   isAndroidApp, isIOS, isStandalone, shareFile, saveFile, printPage, shareText, vibrate, getLocation, setThemeColor,
-  nativeAlarmStatus, nativeRequestNotifications, nativeOpenSettings, nativeTestAlarm, openCalendarFile,
+  nativeAlarmStatus, nativeRequestNotifications, nativeOpenSettings, nativeTestAlarm, openCalendarFile, openCalendarURL,
 } from './platform.js';
 import {
-  RULE_TYPES, describe, nextOccurrence, occurrences, toICS, newReminder, holidayName,
+  RULE_TYPES, describe, nextOccurrence, occurrences, toICS, newReminder, holidayName, punchAlertsICS,
 } from './reminders.js';
 import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.4.1';
+export const VERSION = '1.4.2';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1382,7 +1382,13 @@ function renderSettings() {
 
     <section class="card">
       <h2>Alertas do ponto</h2>
-      <p class="small muted" style="margin-top:0">Avisos automáticos conforme suas marcações${isAndroidApp ? ', inclusive com o app fechado' : ' (com o app aberto)'}.</p>
+      ${isAndroidApp ? '<p class="small muted" style="margin-top:0">Avisos automáticos conforme suas marcações, inclusive com o app fechado.</p>' : `
+      <div class="cal-alert">
+        <b>${icon('info')} ${isIOS ? 'No iPhone' : 'No navegador'}, estes avisos só tocam com o app aberto na tela</b>
+        <p class="small">Para ser avisado com o celular bloqueado, coloque os horários do ponto na Agenda${isIOS ? ' do iPhone' : ''}. A Agenda avisa em todo dia de trabalho, na entrada, no almoço, na volta e na saída, conforme os alertas ligados abaixo.</p>
+        <button class="btn primary block" data-act="punchIcs">${icon('calendar')} Adicionar alertas do ponto à Agenda</button>
+        <p class="small muted" style="margin:8px 0 0">Mudou o horário de trabalho? Apague o calendário antigo na Agenda e toque aqui de novo.</p>
+      </div>`}
       <label class="switch"><span><b>Lembrar de marcar a entrada</b><br><span class="small muted">5 min depois do seu horário de entrada, se ainda não marcou</span></span><input type="checkbox" data-set="alertEntry" ${s.alertEntry ? 'checked' : ''}></label>
       <label class="switch"><span><b>Fim do intervalo de refeição</b><br><span class="small muted">Avisa quando terminar o seu horário de almoço</span></span><input type="checkbox" data-set="alertMealEnd" ${s.alertMealEnd ? 'checked' : ''}></label>
       <label class="switch"><span><b>6 horas sem intervalo</b><br><span class="small muted">Avisa 15 min antes de completar 6h sem refeição</span></span><input type="checkbox" data-set="alertNoBreak" ${s.alertNoBreak ? 'checked' : ''}></label>
@@ -1624,10 +1630,40 @@ ACTIONS.webNotif = async () => {
   try { await Notification.requestPermission(); } catch { /* opcional */ }
   render();
 };
+/** Adiciona eventos à agenda do celular. No iPhone, explica o passo a passo e oferece dois caminhos. */
+async function addToCalendar(name, text, what) {
+  const res = await openCalendarFile(name, text);
+  if (res !== 'ios') return;
+  openSheet(`
+    <div class="fill-head">
+      <span class="fill-ico">${icon('calendar')}</span>
+      <div><h3>Adicionar à Agenda</h3><p class="sub" style="margin:0">${esc(what)}</p></div>
+    </div>
+    <ol class="steps-list">
+      <li>Toque em <b>Abrir na Agenda</b>.</li>
+      <li>Na tela que abrir, toque em <b>Adicionar Todos</b> e escolha o calendário.</li>
+      <li>Pronto: a Agenda avisa na tela bloqueada, mesmo com o app fechado.</li>
+    </ol>
+    <button class="btn primary block" data-open>${icon('calendar')} Abrir na Agenda</button>
+    <p class="small muted" style="margin:14px 0 8px">Não abriu? Envie o arquivo e, no menu, escolha <b>Agenda/Calendário</b> (ou salve em Arquivos e toque nele).</p>
+    <button class="btn block" data-share>${icon('share')} Enviar o arquivo</button>
+    <button class="btn ghost block" data-close style="margin-top:8px">Fechar</button>`, (sh) => {
+    $('[data-open]', sh).addEventListener('click', () => openCalendarURL(text));
+    $('[data-share]', sh).addEventListener('click', () => shareFile(name, 'text/calendar', text));
+  });
+}
+
+ACTIONS.punchIcs = () => {
+  const s = state.settings;
+  const ics = punchAlertsICS(s, { entry: s.alertEntry, meal: s.alertMealEnd, out: s.alertJourneyDone });
+  if (!ics) return toast('Ligue “Lembrar de marcar a entrada”, “Fim do intervalo” ou “Jornada cumprida”');
+  addToCalendar('smartponto-alertas-do-ponto.ics', ics, 'Alertas do ponto no seu horário de trabalho');
+};
+
 ACTIONS.icsAll = () => {
   const list = state.reminders.filter((r) => r.active);
   if (!list.length) return toast('Nenhum lembrete ativo');
-  openCalendarFile('smartponto-lembretes.ics', toICS(list, Date.now(), reminderCtx()));
+  addToCalendar('smartponto-lembretes.ics', toICS(list, Date.now(), reminderCtx()), `${list.length} ${list.length > 1 ? 'lembretes' : 'lembrete'}`);
 };
 
 /** Campos que mudam conforme o tipo de repetição. */
@@ -1814,8 +1850,8 @@ function openReminderEditor(existing, isTemplate = false) {
     });
     $('[data-ics]', s).addEventListener('click', () => {
       if (!valid()) return;
-      openCalendarFile(`lembrete-${d.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'smartponto'}.ics`,
-        toICS([{ ...d, id: d.id || `novo-${Date.now()}`, active: true }], Date.now(), reminderCtx()));
+      addToCalendar(`lembrete-${d.title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30) || 'smartponto'}.ics`,
+        toICS([{ ...d, id: d.id || `novo-${Date.now()}`, active: true }], Date.now(), reminderCtx()), d.title.trim());
     });
     $('[data-del]', s)?.addEventListener('click', async () => {
       const ok = await confirmSheet({ title: `Excluir “${d.title}”?`, text: 'O lembrete e todos os avisos futuros serão removidos.', ok: 'Excluir', danger: true });

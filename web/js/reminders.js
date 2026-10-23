@@ -337,3 +337,71 @@ export function newReminder() {
     rule: { type: 'daily', days: [1, 2, 3, 4, 5], every: 1, unit: 'day', from: '09:00', to: '18:00', everyMin: 60, day: 1, adjust: 'none', nth: 1, weekday: 1, month: 1, date: '' },
   };
 }
+
+// ---------- Alertas do ponto na agenda ----------
+
+/**
+ * Eventos repetidos com os horários do ponto (entrada, almoço, volta, saída), para a agenda do celular
+ * avisar com o app fechado. Segue o horário de trabalho: dias fixos (semanal) ou escala (a cada N dias).
+ * opts: { entry, meal, out } — quais avisos incluir.
+ */
+export function punchAlertsICS(settings, opts, now = Date.now()) {
+  const wp = settings.workPlan;
+  if (!wp) return null;
+  const stamp = new Date(now).toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const kinds = (sh) => [
+    opts.entry && ['in', 'Marcar a entrada', 'Hora de marcar a entrada no WDQ SmartPonto.'],
+    opts.meal && sh.bs && sh.be && ['bs', 'Saída para o almoço', 'Marque a saída para o almoço no WDQ SmartPonto.'],
+    opts.meal && sh.bs && sh.be && ['be', 'Volta do almoço', 'Seu almoço terminou. Marque a volta no WDQ SmartPonto.'],
+    opts.out && ['out', 'Hora de sair', 'Jornada cumprida. Marque a saída no WDQ SmartPonto.'],
+  ].filter(Boolean);
+  // Horário do turno no dia certo (almoço e saída podem cair no dia seguinte).
+  const when = (key, sh, field) => {
+    const a = parseHHMM(sh.in); const m = parseHHMM(sh[field]);
+    return { key: field !== 'in' && m < a ? addDays(key, 1) : key, min: m };
+  };
+  const groups = []; // { firstKey, rrule, shift, id }
+  if (wp.mode === 'cycle') {
+    const c = wp.cycle;
+    const n = c.pattern.length;
+    c.pattern.forEach((w, i) => {
+      if (w) groups.push({ firstKey: addDays(c.start, i), rrule: `FREQ=DAILY;INTERVAL=${n}`, shift: c.shift, id: `c${i}` });
+    });
+  } else {
+    const byShift = new Map();
+    (wp.days || []).forEach((wd) => {
+      const sh = wp.overrides?.[wd] || wp.shift;
+      const k = JSON.stringify(sh);
+      if (!byShift.has(k)) byShift.set(k, { shift: sh, days: [] });
+      byShift.get(k).days.push(wd);
+    });
+    let gi = 0;
+    for (const { shift, days } of byShift.values()) {
+      // Primeira data, a partir de hoje, que cai num desses dias.
+      let first = dayKey(now);
+      while (!days.includes(parseDay(first).getDay())) first = addDays(first, 1);
+      groups.push({ firstKey: first, rrule: `FREQ=WEEKLY;BYDAY=${days.map((d) => WD_ICS[d]).join(',')}`, shift, id: `w${gi++}` });
+    }
+  }
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//WDQ SmartPonto//Alertas do ponto//PT-BR', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Ponto'];
+  let count = 0;
+  for (const g of groups) {
+    for (const [field, title, desc] of kinds(g.shift)) {
+      if (parseHHMM(g.shift[field] || '') === null) continue;
+      const t = when(g.firstKey, g.shift, field);
+      lines.push('BEGIN:VEVENT',
+        `UID:smartponto-ponto-${field}-${g.id}@smartponto`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART:${icsDate(t.key, t.min)}`,
+        `DTEND:${icsDate(t.key, Math.min(t.min + 5, 1439))}`,
+        `SUMMARY:${icsText(title)}`,
+        `DESCRIPTION:${icsText(desc)}`,
+        `RRULE:${g.rrule}`,
+        'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(title)}`, 'TRIGGER:PT0M', 'END:VALARM',
+        'END:VEVENT');
+      count++;
+    }
+  }
+  lines.push('END:VCALENDAR');
+  return count ? lines.join('\r\n') + '\r\n' : null;
+}
