@@ -18,13 +18,16 @@ import {
 } from './reminders.js';
 import { CHANGELOG, cmpVersion } from './changelog.js';
 import {
+  loadAccount, getAccount, syncStatus, serverLink, requestCode, verifyCode, syncNow, logout, onSyncChange,
+} from './sync.js';
+import {
   pushSupported, pushActive, enablePush, disablePush, testPush, lastPushSync,
 } from './push.js';
 import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.5.0';
+export const VERSION = '1.6.0';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1354,6 +1357,7 @@ function renderSettings() {
   const s = state.settings;
   const lastBackup = state.meta.lastBackup ? `${fmtDay(dayKey(state.meta.lastBackup))} às ${hhmm(state.meta.lastBackup)}` : 'nunca';
   return `
+    ${accountCardHTML()}
     <section class="card">
       <h2>Perfil</h2>
       <label class="field"><span>Nome</span><input class="input" data-set="name" value="${esc(s.name)}" autocomplete="name" placeholder="Seu nome"></label>
@@ -1521,8 +1525,9 @@ ACTIONS.exportAll = async () => {
 };
 
 ACTIONS.wipe = async () => {
-  const ok = await confirmSheet({ title: 'Apagar todos os dados?', text: 'Todas as marcações e configurações serão removidas deste aparelho. Faça um backup antes.', ok: 'Apagar tudo', danger: true });
+  const ok = await confirmSheet({ title: 'Apagar todos os dados?', text: 'Todas as marcações e configurações serão removidas deste aparelho (e você sai da conta; os dados da nuvem continuam). Faça um backup antes.', ok: 'Apagar tudo', danger: true });
   if (!ok) return;
+  await logout();
   await wipeAll();
   applyTheme();
   go('home');
@@ -2031,6 +2036,97 @@ ACTIONS.pushOff = async () => {
   toast('Avisos desativados');
 };
 
+// ---------- Minha conta (login por e-mail e sincronização) ----------
+const acctUI = { step: 'email', email: '', link: '' };
+
+function accountCardHTML() {
+  const acc = getAccount();
+  const st = syncStatus();
+  if (acc?.token) {
+    const when = st.lastSync ? `${dayKey(st.lastSync) === today() ? 'hoje' : fmtDay(dayKey(st.lastSync), { year: false })} às ${hhmm(st.lastSync)}` : 'ainda não';
+    return `<section class="card account" id="conta">
+      <div class="acc-head">
+        <span class="acc-avatar">${esc(acc.email[0].toUpperCase())}</span>
+        <div class="grow"><b>${esc(acc.email)}</b><br><span class="small ${st.state === 'error' ? 'neg' : 'muted'}">${
+          st.state === 'syncing' ? 'Sincronizando…' : st.state === 'error' ? esc(st.error) : `${icon('check')} Sincronizado ${when}`}</span></div>
+      </div>
+      <p class="small muted" style="margin:10px 0 12px">Seus lançamentos, lembretes e ajustes ficam guardados na conta. Entre com o mesmo e-mail em outro celular (Android ou iPhone) para ver tudo lá.</p>
+      <div class="btn-row">
+        <button class="btn" data-act="syncNow">${icon('repeat')} Sincronizar agora</button>
+        <button class="btn" data-act="logout">Sair</button>
+      </div>
+      <button class="link small" data-act="deleteAccount" style="margin-top:8px;color:var(--neg)">Excluir minha conta e os dados da nuvem</button>
+    </section>`;
+  }
+  const link = serverLink();
+  const expired = acc && !acc.token;
+  return `<section class="card account" id="conta">
+    <h2>Minha conta</h2>
+    <p class="small" style="margin-top:0">${expired ? `Sua sessão de <b>${esc(acc.email)}</b> expirou. Entre de novo; nada no aparelho foi apagado.` : 'Entre com seu e-mail para guardar seus lançamentos na nuvem e usar em outros aparelhos. Nada do que já está no app se perde: tudo é enviado para a sua conta.'}</p>
+    ${!link ? `<label class="field"><span>Link do servidor</span><input class="input" data-acc-link placeholder="https://seusite.com/smartponto-push/api.php?k=…" autocapitalize="off" autocorrect="off" spellcheck="false" value="${esc(acctUI.link)}"></label>` : ''}
+    ${acctUI.step === 'code' ? `
+      <p class="small">Enviamos um código de 6 dígitos para <b>${esc(acctUI.email)}</b>. Confira também a caixa de spam.</p>
+      <input class="input code-input" data-acc-code inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
+      <button class="btn primary block" data-act="accVerify" style="margin-top:10px">${icon('check')} Entrar</button>
+      <div class="row between" style="margin-top:8px"><button class="link small" data-act="accBack">Trocar e-mail</button><button class="link small" data-act="accResend">Reenviar código</button></div>`
+    : `
+      <label class="field"><span>Seu e-mail</span><input class="input" type="email" data-acc-email autocomplete="email" placeholder="voce@email.com" value="${esc(acctUI.email || acc?.email || '')}"></label>
+      <button class="btn primary block" data-act="accSend">${icon('user')} Receber código por e-mail</button>`}
+  </section>`;
+}
+
+ACTIONS.accSend = async () => {
+  const email = ($('[data-acc-email]')?.value || '').trim();
+  const link = serverLink() || ($('[data-acc-link]')?.value || '').trim();
+  acctUI.link = link;
+  if (!link) return toast('Cole o link do servidor');
+  if (!/^\S+@\S+\.\S+$/.test(email)) return toast('Digite um e-mail válido');
+  try {
+    await requestCode(link, email);
+    acctUI.email = email;
+    acctUI.step = 'code';
+    render();
+    setTimeout(() => $('[data-acc-code]')?.focus(), 50);
+    toast('Código enviado');
+  } catch (e) { toast(e.message); }
+};
+ACTIONS.accResend = async () => {
+  try { await requestCode(serverLink() || acctUI.link, acctUI.email); toast('Novo código enviado'); } catch (e) { toast(e.message); }
+};
+ACTIONS.accBack = () => { acctUI.step = 'email'; render(); };
+ACTIONS.accVerify = async () => {
+  const code = ($('[data-acc-code]')?.value || '').replace(/\D/g, '');
+  if (code.length !== 6) return toast('Digite os 6 números do código');
+  const before = state.punches.length;
+  toast('Entrando…');
+  try {
+    const st = await verifyCode(serverLink() || acctUI.link, acctUI.email, code);
+    acctUI.step = 'email';
+    applyTheme();
+    render();
+    if (st?.state === 'error') return toast(st.error);
+    toast(`Conta conectada · ${state.punches.length} marcações no aparelho${state.punches.length > before ? ` (${state.punches.length - before} vieram da conta)` : ''}`);
+  } catch (e) { toast(e.message); }
+};
+ACTIONS.syncNow = async () => {
+  const st = await syncNow();
+  render();
+  if (st?.state === 'error') toast(st.error);
+  else toast(st?.received ? `${st.received} alterações recebidas` : 'Tudo sincronizado');
+};
+ACTIONS.logout = async () => {
+  const ok = await confirmSheet({ title: 'Sair da conta?', text: 'Os dados continuam neste aparelho e na nuvem. Para sincronizar de novo, entre com o e-mail.', ok: 'Sair' });
+  if (!ok) return;
+  await logout();
+  render();
+  toast('Você saiu da conta');
+};
+ACTIONS.deleteAccount = async () => {
+  const ok = await confirmSheet({ title: 'Excluir a conta?', text: 'Os dados guardados na nuvem serão apagados. Os dados deste aparelho continuam aqui.', ok: 'Excluir conta', danger: true });
+  if (!ok) return;
+  try { await logout({ deleteAccount: true }); render(); toast('Conta excluída'); } catch (e) { toast(e.message); }
+};
+
 // ---------- Primeiro acesso ----------
 function onboarding() {
   openSheet(`
@@ -2041,7 +2137,14 @@ function onboarding() {
       <select class="input" name="preset">${PRESETS.map((p, i) => `<option value="${i}">${esc(p.name)}</option>`).join('')}<option value="custom">Outro: vou informar o meu</option></select>
     </label>
     <p class="small muted">Você pode mudar quando quiser em Ajustes.</p>
-    <button class="btn primary block" data-go>Começar</button>`, (s) => {
+    <button class="btn primary block" data-go>Começar</button>
+    <button class="btn ghost block" data-login style="margin-top:8px">${icon('user')} Já uso em outro aparelho: entrar</button>`, (s) => {
+    $('[data-login]', s).addEventListener('click', async () => {
+      await saveSettings({ name: $('[name=name]', s).value.trim(), onboarded: true });
+      closeSheet();
+      go('settings');
+      toast('Entre com o mesmo e-mail para trazer seus lançamentos');
+    });
     $('[data-go]', s).addEventListener('click', async () => {
       const choice = $('[name=preset]', s).value;
       const p = PRESETS[Number(choice)];
@@ -2094,6 +2197,12 @@ async function init() {
     $('#view').innerHTML = `<div class="card"><b>Não foi possível abrir o armazenamento.</b><p class="muted">${esc(e.message)}. Se estiver em uma janela anônima, abra o app normalmente.</p></div>`;
     return;
   }
+  await loadAccount();
+  onSyncChange((st) => {
+    if (st.state === 'syncing') return;
+    if (st.received) applyTheme();
+    if (!sheetEl && (st.received || ui.view === 'settings')) render();
+  });
   applyTheme();
   const fromHash = location.hash.slice(1);
   if (VIEWS[fromHash]) ui.view = fromHash;
@@ -2106,7 +2215,9 @@ async function init() {
   startWebAlarms(showAlarm);
   if (state.settings.onboarded) setTimeout(maybeShowWhatsNew, 600); else lsSet(LS_SEEN, VERSION);
   checkForUpdate();
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
+  syncNow();
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { checkForUpdate(); syncNow(); } });
+  setInterval(() => { if (!document.hidden) syncNow(); }, 5 * MIN);
   // Recalcula avisos a cada 15 min (virada do dia, alertas do ponto).
   setInterval(syncAlarms, 15 * MIN);
 

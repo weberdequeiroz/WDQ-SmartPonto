@@ -1,6 +1,14 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.6.0', date: '2026-10-23', title: 'Sua conta, em todos os aparelhos',
+    items: [
+      { icon: 'user', title: 'Entrar com e-mail', text: 'Receba um código no e-mail e entre. Sem senha para lembrar.' },
+      { icon: 'repeat', title: 'Lançamentos guardados na nuvem', text: 'Marcações, lembretes e ajustes ficam na sua conta e aparecem no Android e no iPhone.' },
+      { icon: 'shield', title: 'Nada se perde', text: 'Ao entrar, tudo o que já está no app vai para a conta. Se dois aparelhos tiverem lançamentos, eles são juntados.' },
+    ],
+  },
+  {
     version: '1.5.0', date: '2026-10-23', title: 'Avisos com o app fechado',
     items: [
       { icon: 'bell', title: 'Avisos no iPhone com o app fechado', text: 'Conecte um servidor seu (como Hostinger) em Ajustes e receba lembretes e alertas do ponto mesmo com o celular bloqueado.' },

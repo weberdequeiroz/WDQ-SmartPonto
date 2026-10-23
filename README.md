@@ -59,9 +59,9 @@ Opcionais, em Ajustes: lembrar de marcar a entrada, fim do intervalo de refeiç�
 - **Android (APK):** os avisos tocam com o app fechado, na tela bloqueada e depois de reiniciar o celular. Na tela Lembretes, o app mostra quais permissões faltam (notificações, alarme exato, tela cheia, economia de bateria) com um botão para cada uma.
 - **iPhone / navegador:** o iOS pausa apps instalados pelo Safari quando saem da tela, então os avisos só tocam com o app aberto. Para avisar com o celular bloqueado: **Ajustes → Alertas do ponto → Adicionar alertas do ponto à Agenda** (entrada, almoço, volta e saída, repetindo pelo seu horário ou escala) e, nos lembretes, **Adicionar à agenda**.
 
-## Servidor de avisos (iPhone com o app fechado)
+## Servidor: login por e-mail, sincronização e avisos
 
-A pasta `server/` tem um servidor pequeno em PHP (Hostinger ou similar) que envia notificações ao iPhone na hora dos lembretes e alertas do ponto, mesmo com o app fechado. Guia: [server/LEIA-ME.md](server/LEIA-ME.md).
+A pasta `server/` tem um servidor pequeno em PHP (Hostinger ou similar) com login por código enviado ao e-mail, sincronização dos lançamentos entre aparelhos (Android e iPhone, sem perder nada do que já existe) e notificações no iPhone com o app fechado. Guia: [server/LEIA-ME.md](server/LEIA-ME.md).
 
 ## Backup
 

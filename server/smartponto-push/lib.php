@@ -32,6 +32,14 @@ function db(): PDO
         notified INTEGER NOT NULL DEFAULT 0, delivered INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (device, aid))');
     $pdo->exec('CREATE INDEX IF NOT EXISTS alarms_due ON alarms (notified, at)');
+    // Contas (login por e-mail) e dados sincronizados.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, created INTEGER NOT NULL)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS codes (email TEXT PRIMARY KEY, hash TEXT NOT NULL, expires INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, sent INTEGER NOT NULL)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created INTEGER NOT NULL, used INTEGER NOT NULL, device TEXT)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS data (
+        user_id INTEGER NOT NULL, kind TEXT NOT NULL, id TEXT NOT NULL, json TEXT, updated INTEGER NOT NULL,
+        deleted INTEGER NOT NULL DEFAULT 0, rev INTEGER NOT NULL, PRIMARY KEY (user_id, kind, id))');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS data_rev ON data (user_id, rev)');
     return $pdo;
 }
 
@@ -129,4 +137,53 @@ function base_url(): string
     $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
     $dir = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/')), '/');
     return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $dir . '/';
+}
+
+/** Segredo do servidor para os códigos de login (criado na primeira vez). */
+function server_secret(array &$c): string
+{
+    if (empty($c['secret'])) {
+        $c['secret'] = bin2hex(random_bytes(32));
+        save_config($c);
+    }
+    return $c['secret'];
+}
+
+/** Envia o código de login por e-mail (função mail() da hospedagem). */
+function send_code_mail(array $c, string $email, string $code): bool
+{
+    if (!empty($c['mail_log'])) {
+        // Somente para testes: grava o e-mail num arquivo em vez de enviar.
+        file_put_contents(DATA_DIR . '/mail.log', date('c') . " $email $code\n", FILE_APPEND);
+        return true;
+    }
+    $host = preg_replace('/^www\./', '', (string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $from = $c['mail_from'] ?? ('no-reply@' . $host);
+    $subject = '=?UTF-8?B?' . base64_encode("Seu código do WDQ SmartPonto: $code") . '?=';
+    $html = '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;color:#0f172a">'
+        . '<div style="background:linear-gradient(140deg,#1e1b4b,#3730a3 55%,#7c3aed);color:#fff;border-radius:16px;padding:20px;text-align:center">'
+        . '<div style="font-size:14px;opacity:.85">WDQ SmartPonto</div>'
+        . '<div style="font-size:15px;margin-top:10px">Seu código de acesso</div>'
+        . '<div style="font-size:38px;font-weight:800;letter-spacing:8px;margin:8px 0">' . $code . '</div>'
+        . '<div style="font-size:13px;opacity:.85">Vale por 10 minutos</div></div>'
+        . '<p style="font-size:14px;color:#5b6478">Digite este código no app para entrar. Se você não pediu, ignore este e-mail.</p></div>';
+    $headers = implode("\r\n", [
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+        'From: WDQ SmartPonto <' . $from . '>',
+        'Reply-To: ' . $from,
+    ]);
+    return @mail($email, $subject, $html, $headers, '-f' . $from);
+}
+
+/** Usuário da sessão (token enviado pelo app), ou null. */
+function session_user(PDO $pdo, string $token): ?int
+{
+    if ($token === '') return null;
+    $q = $pdo->prepare('SELECT user_id FROM sessions WHERE hash = ?');
+    $q->execute([hash('sha256', $token)]);
+    $uid = $q->fetchColumn();
+    if ($uid === false) return null;
+    $pdo->prepare('UPDATE sessions SET used = ? WHERE hash = ?')->execute([now_ms(), hash('sha256', $token)]);
+    return (int) $uid;
 }
