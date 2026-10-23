@@ -1,6 +1,12 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.7.1', date: '2026-10-23', title: 'Conexão no Android',
+    items: [
+      { icon: 'user', title: 'Entrar com e-mail no Android', text: 'O app Android agora se conecta ao servidor: o código de acesso chega no seu e-mail e as atualizações automáticas funcionam.' },
+    ],
+  },
+  {
     version: '1.7.0', date: '2026-10-23', title: 'Atualizações automáticas',
     items: [
       { icon: 'sparkle', title: 'Android se atualiza sozinho', text: 'O app baixa as novidades ao abrir com internet e mostra “Atualização pronta · Reiniciar”. Não precisa mais baixar o APK a cada versão.' },

@@ -28,7 +28,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.7.0';
+export const VERSION = '1.7.1';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);

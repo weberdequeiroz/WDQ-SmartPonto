@@ -29,7 +29,7 @@ async function call(link, action, body) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}),
     });
   } catch {
-    throw new Error('Sem conexão com o servidor. Confira a internet.');
+    throw new Error('Não foi possível falar com o servidor. Confira a internet e tente de novo.');
   }
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 || data.auth === false) {
