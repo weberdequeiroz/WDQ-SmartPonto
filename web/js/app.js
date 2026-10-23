@@ -12,6 +12,7 @@ import {
 import {
   isAndroidApp, isIOS, isStandalone, shareFile, saveFile, printPage, shareText, vibrate, getLocation, setThemeColor,
   nativeAlarmStatus, nativeRequestNotifications, nativeOpenSettings, nativeTestAlarm, openCalendarFile, openCalendarURL,
+  nativeAutoUpdate, nativeReload, nativeCheckUpdate,
 } from './platform.js';
 import {
   RULE_TYPES, describe, nextOccurrence, occurrences, toICS, newReminder, holidayName, punchAlertsICS,
@@ -27,7 +28,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.6.1';
+export const VERSION = '1.7.0';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -1958,8 +1959,16 @@ function maybeShowWhatsNew() {
 
 // Versão mais nova publicada (lida do próprio site).
 let updateTo = null;
+let updateReady = false; // APK: versão nova já baixada, falta só reiniciar
 let lastCheck = 0;
+// O APK avisa quando terminou de baixar a versão nova.
+window.spWebUpdate = (v) => {
+  updateTo = v;
+  updateReady = true;
+  if (ui.view === 'home' && !sheetEl) render();
+};
 async function checkForUpdate() {
+  if (nativeAutoUpdate) { nativeCheckUpdate(); return; }
   if (Date.now() - lastCheck < 30 * MIN) return;
   lastCheck = Date.now();
   try {
@@ -1977,11 +1986,12 @@ function updateBannerHTML() {
   if (!updateTo) return '';
   return `<div class="update-banner">
     <span class="update-ico">${icon('sparkle')}</span>
-    <span class="grow"><b>Nova versão ${esc(updateTo)} disponível</b><br><span class="small">${isAndroidApp ? 'Baixe e instale por cima, seus dados continuam.' : 'Toque para atualizar agora.'}</span></span>
-    <button class="btn" data-act="doUpdate">${isAndroidApp ? 'Baixar' : 'Atualizar'}</button>
+    <span class="grow"><b>${updateReady ? `Atualização ${esc(updateTo)} pronta` : `Nova versão ${esc(updateTo)} disponível`}</b><br><span class="small">${updateReady ? 'Toque para reiniciar o app. Seus dados continuam.' : isAndroidApp ? 'Baixe e instale por cima, seus dados continuam.' : 'Toque para atualizar agora.'}</span></span>
+    <button class="btn" data-act="doUpdate">${updateReady ? 'Reiniciar' : isAndroidApp ? 'Baixar' : 'Atualizar'}</button>
   </div>`;
 }
 ACTIONS.doUpdate = async () => {
+  if (updateReady && nativeAutoUpdate) { nativeReload(); return; }
   if (isAndroidApp) { window.location.href = `${SITE}SmartPonto.apk`; return; }
   try { const reg = await navigator.serviceWorker?.getRegistration(); await reg?.update(); } catch { /* ok */ }
   window.location.reload();

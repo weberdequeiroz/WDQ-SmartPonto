@@ -45,6 +45,10 @@ jobs:
           mkdir site
           cp -r web/. site/
           cp app/build/outputs/apk/debug/*.apk site/SmartPonto.apk
+          # Lista de arquivos para o APK se atualizar sozinho (WebUpdater.kt)
+          VERSION=$(grep -oP "export const VERSION = '\K[\d.]+" web/js/app.js)
+          (cd web && find . -type f ! -name '*.apk' | sed 's#^\./##' | sort) | python3 -c "import json,sys; print(json.dumps({'version': '$VERSION', 'files': [l.strip() for l in sys.stdin if l.strip()]}))" > site/files.json
+          cat site/files.json
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

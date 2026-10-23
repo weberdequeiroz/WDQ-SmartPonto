@@ -110,3 +110,8 @@ export function openCalendarURL(text) {
   window.location.assign(url);
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
+
+// ---------- Atualização automática do APK (parte web) ----------
+export const nativeAutoUpdate = !!bridge?.reloadApp;
+export function nativeReload() { bridge?.reloadApp?.(); }
+export function nativeCheckUpdate() { bridge?.checkUpdateNow?.(); }

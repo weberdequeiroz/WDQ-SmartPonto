@@ -86,8 +86,9 @@ class MainActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = false
         }
 
+        WebUpdater.prepare(this)
         val assets = WebViewAssetLoader.Builder()
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .addPathHandler("/assets/", WebUpdater.pathHandler(this))
             .build()
 
         web.settings.apply {
@@ -156,6 +157,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        checkWebUpdate(false)
         // Volta de uma tela de permissões: o app web atualiza os avisos e o estado das permissões.
         if (::web.isInitialized) notifyJs()
         AlarmScheduler.scheduleNext(this)
@@ -172,7 +174,31 @@ class MainActivity : ComponentActivity() {
 
     private fun safeName(name: String) = name.replace(Regex("[^A-Za-z0-9._-]"), "_")
 
+    /** Baixa a versão nova do app em segundo plano e avisa a tela quando estiver pronta. */
+    private fun checkWebUpdate(force: Boolean) {
+        Thread {
+            val v = WebUpdater.check(applicationContext, force) ?: return@Thread
+            runOnUiThread {
+                if (::web.isInitialized) web.evaluateJavascript("window.spWebUpdate && window.spWebUpdate('$v')", null)
+            }
+        }.start()
+    }
+
     inner class Bridge {
+        /** A parte web do app se atualiza sozinha (sem reinstalar o APK). */
+        @JavascriptInterface
+        fun webVersion(): String = WebUpdater.currentVersion(this@MainActivity)
+
+        @JavascriptInterface
+        fun reloadApp() {
+            runOnUiThread { web.reload() }
+        }
+
+        @JavascriptInterface
+        fun checkUpdateNow() {
+            checkWebUpdate(true)
+        }
+
         /** Lista de avisos calculada pelo app web (JSON). */
         @JavascriptInterface
         fun setAlarms(json: String) {

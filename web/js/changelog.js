@@ -1,6 +1,13 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.7.0', date: '2026-10-23', title: 'Atualizações automáticas',
+    items: [
+      { icon: 'sparkle', title: 'Android se atualiza sozinho', text: 'O app baixa as novidades ao abrir com internet e mostra “Atualização pronta · Reiniciar”. Não precisa mais baixar o APK a cada versão.' },
+      { icon: 'sparkle', title: 'iPhone: versão nova ao reabrir', text: 'Ao fechar e abrir o app com internet, a versão mais recente já é carregada.' },
+    ],
+  },
+  {
     version: '1.6.1', date: '2026-10-23', title: 'Servidor WDQ Brasil',
     items: [
       { icon: 'user', title: 'Entrar ficou mais fácil', text: 'Em Ajustes → Minha conta, basta digitar o e-mail e o código recebido.' },
