@@ -1,6 +1,12 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.9.1', date: '2026-10-24', title: 'Água mais discreta',
+    items: [
+      { icon: 'drop', title: 'Atalho compacto na tela Ponto', text: 'Uma linha com o progresso do dia e o botão + para somar um copo. Toque na linha para abrir o controle completo de água.' },
+    ],
+  },
+  {
     version: '1.9.0', date: '2026-10-24', title: 'Beba água, ganhe pontos',
     items: [
       { icon: 'drop', title: 'Controle de água na tela Ponto', text: 'Um copo que enche conforme você bebe. Toque em “Bebi água” a cada copo e acompanhe a semana.' },

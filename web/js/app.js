@@ -31,7 +31,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.9.0';
+export const VERSION = '1.9.1';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -414,23 +414,43 @@ function bindPunchPick(root, holder, onDone) {
 const WEEK_LETTER = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 const waterGoalNow = () => goalOf(state.water[today()], state.settings.waterGoal);
 
+/** Atalho compacto na tela Ponto: progresso do dia e um toque para somar um copo. A tela completa abre no painel. */
 function waterCardHTML() {
   if (!state.settings.waterCard) return '';
   const k = today();
-  const day = state.water[k];
   const goal = waterGoalNow();
-  const total = totalOf(day);
+  const total = totalOf(state.water[k]);
+  const pct = Math.min(100, Math.round((total / goal) * 100));
+  const st = waterStats(state.water, k, state.settings.waterGoal);
+  const met = total >= goal;
+  return `<section class="water-mini ${met ? 'met' : ''}">
+    <button class="wm-main" data-act="openWater" aria-label="Abrir controle de água">
+      <span class="wm-ring" style="--p:${pct}">${icon(met ? 'check' : 'drop')}</span>
+      <span class="grow">
+        <b>Água</b> <span class="muted">${fmtWater(total)} de ${fmtWater(goal)}</span>
+        <span class="wm-bar"><i style="width:${pct}%"></i></span>
+      </span>
+      ${st.streak ? `<span class="wm-streak">${icon('flame')}${st.streak}</span>` : ''}
+    </button>
+    <button class="wm-add" data-act="drink" data-arg="${state.settings.waterCup}" aria-label="Bebi água">${icon('plus')}<small>${fmtWater(state.settings.waterCup)}</small></button>
+  </section>`;
+}
+
+/** Topo do painel de água: copo, totais, conquistas e a semana. */
+function waterHeroHTML() {
+  const k = today();
+  const goal = waterGoalNow();
+  const total = totalOf(state.water[k]);
   const pct = Math.min(100, Math.round((total / goal) * 100));
   const st = waterStats(state.water, k, state.settings.waterGoal);
   const met = total >= goal;
   const cup = state.settings.waterCup;
   const left = Math.max(0, goal - total);
   const cups = Math.ceil(left / cup);
-  return `<section class="card water ${met ? 'met' : ''}">
-    <button class="water-top" data-act="openWater">
+  return `<div class="water ${met ? 'met' : ''}">
+    <div class="water-top">
       <span class="glass" style="--fill:${pct}%"><span class="wave"></span><span class="glass-pct">${pct}%</span></span>
       <span class="grow">
-        <span class="water-k">Água hoje</span>
         <span class="water-amount"><b>${fmtWater(total)}</b> <span class="muted">de ${fmtWater(goal)}</span></span>
         <span class="small ${met ? 'water-ok' : 'muted'}">${met ? `${icon('check')} Meta batida! +${st.earned[k]} pontos` : `Faltam ${fmtWater(left)} · ${cups} ${cups === 1 ? 'copo' : 'copos'} · vale +${nextReward(state.water, k, state.settings.waterGoal)} pts`}</span>
         <span class="water-chips">
@@ -439,14 +459,10 @@ function waterCardHTML() {
           <span class="wchip">${icon('trophy')} ${st.level.name}</span>
         </span>
       </span>
-    </button>
-    <div class="water-week">${st.week.map((w) => `<span class="wd ${w.pct >= 100 ? 'full' : ''} ${w.key === k ? 'today' : ''}" title="${esc(fmtDay(w.key, { year: false }))}: ${fmtWater(w.total)}"><span class="wd-bar"><i style="height:${w.pct}%"></i></span><span class="wd-l">${WEEK_LETTER[parseDay(w.key).getDay()]}</span></span>`).join('')}</div>
-    <div class="water-btns">
-      <button class="btn water-drink" data-act="drink" data-arg="${cup}">${icon('drop')}<span class="drink-txt"><b>Bebi água</b><small>+${fmtWater(cup)}</small></span></button>
-      <button class="btn" data-act="drink" data-arg="500">+500 ml</button>
-      <button class="btn" data-act="openWater" aria-label="Mais opções">${icon('more')}</button>
     </div>
-  </section>`;
+    <div class="water-week">${st.week.map((w) => `<span class="wd ${w.pct >= 100 ? 'full' : ''} ${w.key === k ? 'today' : ''}"><span class="wd-bar"><i style="height:${w.pct}%"></i></span><span class="wd-l">${WEEK_LETTER[parseDay(w.key).getDay()]}</span></span>`).join('')}</div>
+    <button class="btn block water-drink" data-ml="${cup}">${icon('drop')}<span class="drink-txt"><b>Bebi água</b><small>+${fmtWater(cup)}</small></span></button>
+  </div>`;
 }
 
 async function drink(ml) {
@@ -459,10 +475,10 @@ async function drink(ml) {
   await addWater(k, ml, waterGoalNow());
   vibrate([30]);
   render();
-  if (sheetEl?.dataset.water) openWater();
-  else if (ui.view === 'home') {
+  if (sheetEl?.dataset.water) {
+    openWater();
     // Enche o copo aos poucos, a partir do nível anterior.
-    const g = $('#view .glass');
+    const g = $('.sheet .glass');
     const pct = g?.style.getPropertyValue('--fill');
     if (g) {
       g.style.setProperty('--fill', `${prevPct}%`);
@@ -540,10 +556,8 @@ function openWater() {
   const rem = waterReminder();
   const log = [...(day?.log || [])].sort((a, b) => b.ts - a.ts);
   const sheet = openSheet(`
-    <div class="fill-head">
-      <span class="fill-ico water-ico">${icon('drop')}</span>
-      <div><h3>Água</h3><p class="sub" style="margin:0"><b>${fmtWater(total)}</b> de ${fmtWater(goal)} hoje</p></div>
-    </div>
+    <h3 style="margin-bottom:12px">Água hoje</h3>
+    ${waterHeroHTML()}
 
     <div class="level-box">
       <div class="row between"><b>${icon('trophy')} Nível ${esc(lv.name)}</b><span class="small"><b>${st.points}</b> pts</span></div>
@@ -595,9 +609,9 @@ function openWater() {
       if (!(v >= 500 && v <= 6000)) return toast('Meta entre 500 e 6000 ml');
       await saveSettings({ waterGoal: v });
       await setWaterGoal(k, v);
-      $('[data-goal]', sh).value = v;
-      $('.sub', sh).innerHTML = `<b>${fmtWater(totalOf(state.water[k]))}</b> de ${fmtWater(v)} hoje`;
       render();
+      openWater();
+      toast(`Meta: ${fmtWater(v)} por dia`);
     };
     $('[data-goal]', sh).addEventListener('change', (e) => setGoal(Number(e.target.value)));
     $('[data-weight]', sh).addEventListener('change', (e) => {
