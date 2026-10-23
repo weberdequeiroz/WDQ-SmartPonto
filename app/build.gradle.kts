@@ -9,8 +9,8 @@ android {
         applicationId = "com.wdq.smartponto"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "1.7.1"
+        versionCode = 15
+        versionName = "1.8.0"
     }
     signingConfigs {
         // Chave fixa: cada APK novo instala por cima do anterior sem perder dados.

@@ -1,6 +1,13 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.8.0', date: '2026-10-23', title: 'Excluir várias marcações',
+    items: [
+      { icon: 'check', title: 'Selecionar várias de uma vez', text: 'Em “Marcações de hoje” ou no dia do Histórico, toque em Selecionar, escolha as marcações (ou Todas) e toque em Excluir. Errou? Toque em Desfazer.' },
+      { icon: 'warn', title: 'Proteção contra toque repetido', text: 'Se você marcar de novo menos de 2 minutos depois da última marcação, o app pergunta antes de registrar.' },
+    ],
+  },
+  {
     version: '1.7.1', date: '2026-10-23', title: 'Conexão no Android',
     items: [
       { icon: 'user', title: 'Entrar com e-mail no Android', text: 'O app Android agora se conecta ao servidor: o código de acesso chega no seu e-mail e as atualizações automáticas funcionam.' },

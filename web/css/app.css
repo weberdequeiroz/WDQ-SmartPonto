@@ -220,6 +220,21 @@ svg.i { width: 22px; height: 22px; flex: none; stroke: currentColor; fill: none;
 .tag.t-break_end { background: var(--c-back); }
 .tag.t-out { background: var(--c-out); }
 .timeline button.link { margin-left: auto; }
+.timeline .sel-dot { display: none; }
+.timeline.picking .sel-dot { display: grid; }
+.timeline.picking li { cursor: pointer; border-radius: 12px; }
+.timeline.picking li.selected { background: linear-gradient(135deg, rgba(79, 70, 229, .12), rgba(124, 58, 237, .12)); }
+.timeline.picking li.selected .sel-dot { background: var(--brand); border-color: var(--brand); color: #fff; }
+.timeline.picking button.link { visibility: hidden; }
+.pick-toggle { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; font-size: 14px; color: var(--brand); }
+.pick-toggle svg.i { width: 16px; height: 16px; }
+.pick-bar {
+  position: sticky; bottom: calc(80px + var(--safe-bottom)); z-index: 5; margin-top: 10px;
+  display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 16px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(15, 23, 42, .25); animation: up .2s ease-out;
+}
+.sheet .pick-bar { bottom: 0; }
+.pick-bar .btn { min-height: 42px; }
 .link { border: 0; background: none; color: var(--muted); padding: 8px; border-radius: 10px; }
 
 .empty { text-align: center; color: var(--muted); padding: 18px 8px; }

@@ -28,7 +28,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.7.1';
+export const VERSION = '1.8.0';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -89,6 +89,7 @@ const VIEWS = {
 };
 const ui = {
   view: 'home',
+  pickHome: { ids: null },
   historyMonth: today(),
   report: { mode: 'month', anchor: today(), from: addDays(today(), -29), to: today() },
 };
@@ -108,6 +109,9 @@ function render() {
   $('#view').innerHTML = `${v.render()}<footer class="credit">Desenvolvido por Weber de Queiroz</footer>`;
   v.mount?.();
   bindView();
+  const plist = $('#view [data-plist]');
+  if (plist) bindPunchPick(plist, ui.pickHome, render);
+  else ui.pickHome.ids = null;
   syncAlarms();
 }
 
@@ -175,7 +179,15 @@ const reasonInfo = (label) => BREAK_REASONS.find((r) => r.label === label);
 
 async function punch(type, extra = {}) {
   const ts = Date.now();
-  if (state.settings.confirmPunch) {
+  const last = state.punches.reduce((a, p) => (p.ts <= ts && (!a || p.ts > a.ts) ? p : a), null);
+  if (last && ts - last.ts < 2 * MIN) {
+    const ok = await confirmSheet({
+      title: 'Marcar de novo?',
+      text: `Você registrou ${PUNCH_TYPES[last.type].label.toLowerCase()} às ${hhmm(last.ts)}, há menos de 2 minutos.`,
+      ok: `Registrar ${PUNCH_TYPES[type].label.toLowerCase()}`,
+    });
+    if (!ok) return;
+  } else if (state.settings.confirmPunch) {
     const ok = await confirmSheet({ title: `Registrar ${PUNCH_TYPES[type].label.toLowerCase()}?`, text: `Horário: ${hhmm(ts)}`, ok: 'Registrar' });
     if (!ok) return;
   }
@@ -321,7 +333,8 @@ function punchLabel(p) {
 function timelineHTML(punches) {
   if (!punches.length) return '<div class="empty">Nenhuma marcação.</div>';
   return `<ul class="timeline">${punches.map((p) => `
-    <li>
+    <li data-pid="${p.id}">
+      <span class="sel-dot">${icon('check')}</span>
       <span class="tag t-${p.type}"></span>
       <span class="time">${hhmm(p.ts)}</span>
       <span class="grow">
@@ -332,6 +345,62 @@ function timelineHTML(punches) {
       </span>
       <button class="link" data-act="editPunch" data-arg="${p.id}" aria-label="Editar">${icon('edit')}</button>
     </li>`).join('')}</ul>`;
+}
+
+/**
+ * Seleção de várias marcações numa lista (tela Ponto e painel do dia).
+ * holder.ids guarda a seleção (null = fora do modo de seleção), para sobreviver a um redesenho.
+ */
+function pickToggleHTML(punches) {
+  return punches.length > 1 ? `<button class="link pick-toggle" data-pick-toggle>${icon('check')} Selecionar</button>` : '';
+}
+function bindPunchPick(root, holder, onDone) {
+  const list = $('.timeline', root);
+  const toggle = $('[data-pick-toggle]', root);
+  if (!list || !toggle) return;
+  const rows = $$('li[data-pid]', list);
+  let bar = null;
+  const paint = () => {
+    const on = !!holder.ids;
+    list.classList.toggle('picking', on);
+    toggle.innerHTML = on ? 'Cancelar' : `${icon('check')} Selecionar`;
+    rows.forEach((li) => li.classList.toggle('selected', on && holder.ids.has(li.dataset.pid)));
+    if (!on) { bar?.remove(); bar = null; return; }
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'pick-bar';
+      list.after(bar);
+      bar.addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-pick]');
+        if (!b) return;
+        if (b.dataset.pick === 'all') {
+          holder.ids = holder.ids.size === rows.length ? new Set() : new Set(rows.map((li) => li.dataset.pid));
+          paint();
+          return;
+        }
+        const removed = state.punches.filter((p) => holder.ids.has(p.id));
+        if (!removed.length) return;
+        for (const p of removed) await deletePunch(p.id);
+        holder.ids = null;
+        onDone();
+        undoToast(removed.length === 1 ? 'Marcação excluída' : `${removed.length} marcações excluídas`, [], removed);
+      });
+    }
+    const n = holder.ids.size;
+    bar.innerHTML = `<button class="btn" data-pick="all">${n === rows.length ? 'Nenhuma' : 'Todas'}</button>
+      <span class="grow small"><b>${n}</b> ${n === 1 ? 'selecionada' : 'selecionadas'}</span>
+      <button class="btn danger" data-pick="del" ${n ? '' : 'disabled'}>${icon('trash')} Excluir</button>`;
+  };
+  toggle.addEventListener('click', () => { holder.ids = holder.ids ? null : new Set(); paint(); });
+  rows.forEach((li) => li.addEventListener('click', (e) => {
+    if (!holder.ids) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const id = li.dataset.pid;
+    if (holder.ids.has(id)) holder.ids.delete(id); else holder.ids.add(id);
+    paint();
+  }, true));
+  paint();
 }
 
 // ---------- Tela: Ponto ----------
@@ -426,10 +495,10 @@ function renderHome() {
 
     ${homeRemindersHTML(now)}
 
-    <section class="card">
+    <section class="card" data-plist>
       <div class="row between" style="margin-bottom:6px">
         <h2 style="margin:0">Marcações de hoje</h2>
-        <button class="link" data-act="addPunch" data-arg="${today()}">${icon('plus')}</button>
+        <span class="row">${pickToggleHTML(s.punches)}<button class="link" data-act="addPunch" data-arg="${today()}" aria-label="Adicionar">${icon('plus')}</button></span>
       </div>
       ${timelineHTML(s.punches)}
       ${!s.punches.length && dayTemplate(today(), state.settings, state.dayInfo).some((t) => t.ts < now - 30 * MIN) ? `<button class="btn block wand-btn" data-act="fillDay" data-arg="${today()}" style="margin-top:10px">${icon('wand')} Esqueceu de marcar? Preencher até agora</button>` : ''}
@@ -579,7 +648,7 @@ function openDay(key) {
     <h3>${esc(fmtDayLong(key))}</h3>
     <p class="sub">Trabalhado ${fmtDur(s.work)} · Intervalos ${fmtDur(s.breaks)} · Previsto ${fmtDur(s.expected)} · Saldo <b class="${signCls(s.balance)}">${fmtDur(s.balance, { sign: true })}</b></p>
     ${s.warnings.length ? `<div class="banner">${icon('warn')}<span>${s.warnings.map(esc).join('<br>')}</span></div>` : ''}
-    <div class="card" style="box-shadow:none">${timelineHTML(s.punches)}</div>
+    <div class="card" style="box-shadow:none">${s.punches.length > 1 ? `<div class="row between" style="margin:-6px 0 2px"><span class="small muted">${s.punches.length} marcações</span>${pickToggleHTML(s.punches)}</div>` : ''}${timelineHTML(s.punches)}</div>
     ${dayTemplate(key, state.settings, state.dayInfo).length ? `<button class="btn block wand-btn" data-fill style="margin-bottom:10px">${icon('wand')} ${s.punches.length ? 'Corrigir pela jornada' : 'Preencher com a jornada'}</button>` : ''}
     <button class="btn block" data-add style="margin-bottom:16px">${icon('plus')} Adicionar marcação</button>
     <label class="field"><span>Ocorrência do dia</span>
@@ -601,6 +670,7 @@ function openDay(key) {
   });
   // Editar marcação a partir do painel do dia
   $$('[data-act="editPunch"]', sheet).forEach((b) => b.addEventListener('click', () => ACTIONS.editPunch(b.dataset.arg)));
+  bindPunchPick(sheet, { ids: null }, () => { render(); openDay(key); });
 }
 ACTIONS.openDay = (key) => openDay(key);
 
