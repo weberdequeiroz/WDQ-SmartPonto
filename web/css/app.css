@@ -682,25 +682,44 @@ details.more[open] summary { margin-bottom: 10px; }
 .alarm-drink { background: linear-gradient(135deg, var(--water-2), var(--water-deep)) !important; color: #fff !important; margin-bottom: 10px; }
 .alarm-sec { background: rgba(255, 255, 255, .12) !important; color: #fff !important; }
 
-/* Atalho de água na tela Ponto */
-.water-mini { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding: 8px 8px 8px 12px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); }
-.wm-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.wm-main .grow { min-width: 0; font-size: 15px; }
-.wm-main .muted { font-size: 14px; }
-.wm-ring { --p: 0; width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; color: var(--water);
-  background: radial-gradient(closest-side, var(--surface) 76%, transparent 78%), conic-gradient(var(--water) calc(var(--p) * 1%), var(--surface-2) 0); }
-.wm-ring svg.i { width: 18px; height: 18px; }
-.water-mini.met .wm-ring { color: #16a34a; background: radial-gradient(closest-side, var(--surface) 76%, transparent 78%), conic-gradient(#22c55e 100%, transparent 0); }
-.water-mini.met .wm-ring svg.i { stroke-width: 3; }
-.wm-bar { display: block; height: 4px; border-radius: 99px; background: var(--surface-2); margin-top: 6px; overflow: hidden; }
-.wm-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--water-2), var(--water)); transition: width .6s ease; }
-.water-mini.met .wm-bar i { background: linear-gradient(90deg, #4ade80, #16a34a); }
-.wm-streak { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; font-weight: 800; color: #f97316; }
-.wm-streak svg.i { width: 15px; height: 15px; fill: rgba(249, 115, 22, .25); }
-.wm-add { flex: none; width: 54px; height: 48px; border-radius: 14px; border: 0; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1;
-  background: linear-gradient(135deg, var(--water-2), var(--water-deep)); box-shadow: 0 4px 12px rgba(14, 165, 233, .3); }
-.wm-add svg.i { width: 18px; height: 18px; stroke-width: 3; }
-.wm-add small { font-size: 10px; font-weight: 700; margin-top: 2px; }
-.wm-add:active { transform: scale(.95); }
-.sheet .water { margin-bottom: 4px; }
-.sheet .water-drink { margin-top: 2px; min-height: 52px; justify-content: center; }
+
+/* Botões de atalho na tela Ponto (Água) */
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+.tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 92px; padding: 12px 6px;
+  border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; box-shadow: var(--shadow); }
+.tile b { font-size: 15px; font-weight: 600; }
+.tile small { font-size: 12px; color: var(--muted); margin-top: -4px; }
+.tile:active { transform: scale(.96); }
+.tile-ico svg.i { width: 30px; height: 30px; }
+.tile.met small { color: #16a34a; font-weight: 700; }
+.water-fill svg.i { color: var(--water-2); fill: var(--water-2); stroke: var(--water-2); }
+.water-fill svg.i path + path { fill: rgba(2, 6, 23, .55); stroke: none; }
+
+/* Painel de água */
+.wsheet-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.wsheet-ico svg.i { width: 34px; height: 34px; }
+.wsheet-total { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; }
+.wsheet-total b { font-size: 28px; font-weight: 800; color: var(--water-2); }
+.wsheet-goal { margin-bottom: 14px; }
+.wsheet-goal .progress { margin: 0 0 6px; }
+.wsheet-goal .progress > div { background: linear-gradient(90deg, var(--water-2), var(--water)); }
+.wsheet-goal.met .progress > div { background: linear-gradient(90deg, #4ade80, #16a34a); }
+.wsheet-goal.met .row > span:first-child { color: #16a34a; font-weight: 700; }
+.wsheet-goal svg.i { width: 14px; height: 14px; vertical-align: -2px; }
+.wsheet-chips { display: inline-flex; gap: 10px; font-weight: 700; }
+.wsheet-chips span { display: inline-flex; align-items: center; gap: 2px; }
+.wsheet-chips svg.i { color: var(--water); }
+.wsheet-chips .hot svg.i { color: #f97316; }
+.drink-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.drink-btn { display: flex; align-items: center; gap: 14px; min-height: 66px; padding: 10px 18px; border-radius: 20px; border: 0; text-align: left; font: inherit; color: var(--text);
+  background: rgba(14, 165, 233, .16); background: color-mix(in srgb, var(--water) 22%, var(--surface)); }
+.drink-btn:active { transform: scale(.97); filter: brightness(1.15); }
+.drink-btn .water-fill svg.i { width: 26px; height: 26px; }
+.drink-btn b { display: block; font-size: 16px; font-weight: 700; }
+.drink-btn small { display: block; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
+.wsheet-more { margin: 14px 0 4px; border: 1px solid var(--border); border-radius: 16px; padding: 4px 14px; }
+.wsheet-more summary { cursor: pointer; padding: 10px 0; font-weight: 700; list-style: none; display: flex; align-items: center; gap: 8px; }
+.wsheet-more summary::-webkit-details-marker { display: none; }
+.wsheet-more summary svg.i { width: 18px; height: 18px; color: var(--water); }
+.wsheet-more[open] summary { border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.wsheet-done { margin-top: 14px; min-height: 54px; border: 0 !important; color: #06281f !important; font-weight: 800; background: #5eead4 !important; border-radius: 99px; }

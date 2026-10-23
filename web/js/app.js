@@ -10,7 +10,7 @@ import {
   markBackup, exportBackup, importBackup, wipeAll, saveReminder, deleteReminder, addWater, removeWater, setWaterGoal,
 } from './store.js';
 import {
-  AMOUNTS, totalOf, goalOf, metGoal, fmtWater, waterStats, nextReward, POINTS_GOAL, STREAK_BONUS_MAX, LEVELS,
+  CONTAINERS, totalOf, goalOf, metGoal, fmtWater, waterStats, nextReward, POINTS_GOAL, STREAK_BONUS_MAX, LEVELS,
 } from './water.js';
 import {
   isAndroidApp, isIOS, isStandalone, shareFile, saveFile, printPage, shareText, vibrate, getLocation, setThemeColor,
@@ -31,7 +31,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.9.2';
+export const VERSION = '1.9.3';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -78,6 +78,7 @@ const ICONS = {
   check: '<path d="M20 6L9 17l-5-5"/>',
   home: '<path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
   sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
+  cup: '<path d="M5 3h14l-1.6 17.2a2 2 0 0 1-2 1.8H8.6a2 2 0 0 1-2-1.8z"/><path d="M12 10.5s-2.2 2.4-2.2 3.9a2.2 2.2 0 0 0 4.4 0c0-1.5-2.2-3.9-2.2-3.9z"/>',
   drop: '<path d="M12 2.7s-6.5 7.1-6.5 11.8a6.5 6.5 0 0 0 13 0C18.5 9.8 12 2.7 12 2.7z"/>',
   flame: '<path d="M12 22c4 0 7-2.8 7-6.8 0-3.6-2.6-6-4.2-8.2-.4 2-1.5 3.3-2.8 3.8.3-3.2-1.2-6.4-4-8.8.2 3.3-3 6.2-3 10.6C5 19 8 22 12 22z"/>',
   star: '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z"/>',
@@ -414,55 +415,18 @@ function bindPunchPick(root, holder, onDone) {
 const WEEK_LETTER = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 const waterGoalNow = () => goalOf(state.water[today()], state.settings.waterGoal);
 
-/** Atalho compacto na tela Ponto: progresso do dia e um toque para somar um copo. A tela completa abre no painel. */
+/** Botão de atalho na tela Ponto (abre o painel de água). */
 function waterCardHTML() {
   if (!state.settings.waterOn || !state.settings.waterCard) return '';
-  const k = today();
-  const goal = waterGoalNow();
-  const total = totalOf(state.water[k]);
-  const pct = Math.min(100, Math.round((total / goal) * 100));
-  const st = waterStats(state.water, k, state.settings.waterGoal);
-  const met = total >= goal;
-  return `<section class="water-mini ${met ? 'met' : ''}">
-    <button class="wm-main" data-act="openWater" aria-label="Abrir controle de água">
-      <span class="wm-ring" style="--p:${pct}">${icon(met ? 'check' : 'drop')}</span>
-      <span class="grow">
-        <b>Água</b> <span class="muted">${fmtWater(total)} de ${fmtWater(goal)}</span>
-        <span class="wm-bar"><i style="width:${pct}%"></i></span>
-      </span>
-      ${st.streak ? `<span class="wm-streak">${icon('flame')}${st.streak}</span>` : ''}
+  const total = totalOf(state.water[today()]);
+  const met = total >= waterGoalNow();
+  return `<section class="tiles">
+    <button class="tile ${met ? 'met' : ''}" data-act="openWater">
+      <span class="tile-ico water-fill">${icon('drop')}</span>
+      <b>Água</b>
+      ${total ? `<small>${fmtWater(total)}</small>` : ''}
     </button>
-    <button class="wm-add" data-act="drink" data-arg="${state.settings.waterCup}" aria-label="Bebi água">${icon('plus')}<small>${fmtWater(state.settings.waterCup)}</small></button>
   </section>`;
-}
-
-/** Topo do painel de água: copo, totais, conquistas e a semana. */
-function waterHeroHTML() {
-  const k = today();
-  const goal = waterGoalNow();
-  const total = totalOf(state.water[k]);
-  const pct = Math.min(100, Math.round((total / goal) * 100));
-  const st = waterStats(state.water, k, state.settings.waterGoal);
-  const met = total >= goal;
-  const cup = state.settings.waterCup;
-  const left = Math.max(0, goal - total);
-  const cups = Math.ceil(left / cup);
-  return `<div class="water ${met ? 'met' : ''}">
-    <div class="water-top">
-      <span class="glass" style="--fill:${pct}%"><span class="wave"></span><span class="glass-pct">${pct}%</span></span>
-      <span class="grow">
-        <span class="water-amount"><b>${fmtWater(total)}</b> <span class="muted">de ${fmtWater(goal)}</span></span>
-        <span class="small ${met ? 'water-ok' : 'muted'}">${met ? `${icon('check')} Meta batida! +${st.earned[k]} pontos` : `Faltam ${fmtWater(left)} · ${cups} ${cups === 1 ? 'copo' : 'copos'} · vale +${nextReward(state.water, k, state.settings.waterGoal)} pts`}</span>
-        <span class="water-chips">
-          <span class="wchip ${st.streak ? 'hot' : ''}">${icon('flame')} ${st.streak} ${st.streak === 1 ? 'dia' : 'dias'}</span>
-          <span class="wchip">${icon('star')} ${st.points} pts</span>
-          <span class="wchip">${icon('trophy')} ${st.level.name}</span>
-        </span>
-      </span>
-    </div>
-    <div class="water-week">${st.week.map((w) => `<span class="wd ${w.pct >= 100 ? 'full' : ''} ${w.key === k ? 'today' : ''}"><span class="wd-bar"><i style="height:${w.pct}%"></i></span><span class="wd-l">${WEEK_LETTER[parseDay(w.key).getDay()]}</span></span>`).join('')}</div>
-    <button class="btn block water-drink" data-ml="${cup}">${icon('drop')}<span class="drink-txt"><b>Bebi água</b><small>+${fmtWater(cup)}</small></span></button>
-  </div>`;
 }
 
 async function drink(ml) {
@@ -471,20 +435,10 @@ async function drink(ml) {
   const k = today();
   const before = waterStats(state.water, k, state.settings.waterGoal);
   const wasMet = metGoal(state.water[k], state.settings.waterGoal);
-  const prevPct = Math.min(100, Math.round((totalOf(state.water[k]) / waterGoalNow()) * 100));
   await addWater(k, ml, waterGoalNow());
   vibrate([30]);
   render();
-  if (sheetEl?.dataset.water) {
-    openWater();
-    // Enche o copo aos poucos, a partir do nível anterior.
-    const g = $('.sheet .glass');
-    const pct = g?.style.getPropertyValue('--fill');
-    if (g) {
-      g.style.setProperty('--fill', `${prevPct}%`);
-      requestAnimationFrame(() => requestAnimationFrame(() => g.style.setProperty('--fill', pct)));
-    }
-  }
+  if (sheetEl?.dataset.water) openWater();
   const after = waterStats(state.water, k, state.settings.waterGoal);
   if (!wasMet && metGoal(state.water[k], state.settings.waterGoal)) {
     celebrateWater(after.earned[k], after.streak, after.level.index > before.level.index ? after.level : null);
@@ -558,51 +512,66 @@ function openWater() {
   const s = state.settings;
   const goal = waterGoalNow();
   const total = totalOf(day);
+  const pct = Math.min(100, Math.round((total / goal) * 100));
   const st = waterStats(state.water, k, s.waterGoal);
   const lv = st.level;
+  const met = total >= goal;
   const rem = waterReminder();
   const log = [...(day?.log || [])].sort((a, b) => b.ts - a.ts);
   const sheet = openSheet(`
-    <h3 style="margin-bottom:12px">Água hoje</h3>
-    ${waterHeroHTML()}
-
-    <div class="level-box">
-      <div class="row between"><b>${icon('trophy')} Nível ${esc(lv.name)}</b><span class="small"><b>${st.points}</b> pts</span></div>
-      <div class="progress"><div style="width:${lv.pct}%"></div></div>
-      <div class="small muted">${lv.next ? `Faltam ${lv.next.min - st.points} pontos para ${esc(lv.next.name)}` : 'Você chegou ao nível máximo!'} · ${icon('flame')} sequência de ${st.streak} (recorde ${st.best})</div>
+    <div class="wsheet-head">
+      <span class="water-fill wsheet-ico">${icon('drop')}</span>
+      <div class="grow"><h3 style="margin:0">Água</h3><span class="small muted">Toque para registrar o que você bebeu</span></div>
+      <div class="wsheet-total"><b>${fmtWater(total)}</b><span class="small muted">hoje</span></div>
+    </div>
+    <div class="wsheet-goal ${met ? 'met' : ''}">
+      <div class="progress"><div style="width:${pct}%"></div></div>
+      <div class="row between small">
+        <span>${met ? `${icon('check')} Meta batida! +${st.earned[k]} pts` : `Meta ${fmtWater(goal)} · faltam ${fmtWater(goal - total)} · vale +${nextReward(state.water, k, s.waterGoal)} pts`}</span>
+        <span class="wsheet-chips"><span class="${st.streak ? 'hot' : ''}">${icon('flame')}${st.streak}</span><span>${icon('star')}${st.points}</span></span>
+      </div>
     </div>
 
-    <h4 class="sheet-sub">Quanto você bebeu?</h4>
-    <div class="amount-grid">${AMOUNTS.map((ml) => `<button class="btn" data-ml="${ml}">${fmtWater(ml)}</button>`).join('')}</div>
-    <div class="row" style="gap:8px;margin:8px 0 4px">
-      <input class="input" type="number" min="10" max="3000" step="10" inputmode="numeric" placeholder="Outro valor (ml)" data-custom>
-      <button class="btn primary" data-add-custom>Adicionar</button>
+    <div class="drink-grid">${CONTAINERS.map((c) => `<button class="drink-btn" data-ml="${c.ml}">
+      <span class="water-fill">${icon(c.icon)}</span><span><b>${esc(c.name)}</b><small>${c.ml} ml</small></span>
+    </button>`).join('')}</div>
+    <div class="row" style="gap:8px;margin:12px 0 4px">
+      <input class="input" type="number" min="10" max="3000" step="10" inputmode="numeric" placeholder="Outra quantidade (ml)" data-custom>
+      <button class="btn" data-add-custom disabled>Adicionar</button>
     </div>
 
     ${log.length ? `<h4 class="sheet-sub">Hoje</h4>
     <ul class="water-log">${log.map((e) => `<li><span class="time">${hhmm(e.ts)}</span><span class="grow">${icon('drop')} ${fmtWater(e.ml)}</span><button class="link" data-del-ts="${e.ts}" aria-label="Apagar">${icon('trash')}</button></li>`).join('')}</ul>` : ''}
 
-    <h4 class="sheet-sub">Sua meta</h4>
-    <div class="grid-2">
-      <label class="field"><span>Meta diária (ml)</span><input class="input" type="number" min="500" max="6000" step="50" inputmode="numeric" data-goal value="${s.waterGoal}"></label>
-      <label class="field"><span>Seu peso (kg) para sugerir</span><input class="input" type="number" min="30" max="250" inputmode="numeric" data-weight placeholder="Ex.: 70"></label>
-    </div>
-    <p class="small muted" data-hint style="margin:-4px 0 10px">Referência comum: 35 ml por kg de peso. Siga a orientação do seu médico.</p>
-    <label class="field"><span>Tamanho do seu copo (botão “Bebi água”)</span>
-      <select class="input" data-cup>${[150, 200, 250, 300, 350, 400, 500].map((ml) => `<option value="${ml}" ${s.waterCup === ml ? 'selected' : ''}>${fmtWater(ml)}</option>`).join('')}</select>
-    </label>
-    <label class="switch"><span><b>Mostrar na tela Ponto</b><br><span class="small muted">Cartão com o copo, a meta e a sequência</span></span><input type="checkbox" data-card ${s.waterCard ? 'checked' : ''}></label>
+    <details class="wsheet-more">
+      <summary>${icon('trophy')} Meta, pontos e lembrete <span class="small muted">· nível ${esc(lv.name)}</span></summary>
+      <div class="level-box">
+        <div class="row between"><b>${icon('trophy')} Nível ${esc(lv.name)}</b><span class="small"><b>${st.points}</b> pts</span></div>
+        <div class="progress"><div style="width:${lv.pct}%"></div></div>
+        <div class="small muted">${lv.next ? `Faltam ${lv.next.min - st.points} pontos para ${esc(lv.next.name)}` : 'Você chegou ao nível máximo!'} · sequência de ${st.streak} (recorde ${st.best})</div>
+      </div>
+      <div class="water-week">${st.week.map((w) => `<span class="wd ${w.pct >= 100 ? 'full' : ''} ${w.key === k ? 'today' : ''}"><span class="wd-bar"><i style="height:${w.pct}%"></i></span><span class="wd-l">${WEEK_LETTER[parseDay(w.key).getDay()]}</span></span>`).join('')}</div>
+      <div class="grid-2">
+        <label class="field"><span>Meta diária (ml)</span><input class="input" type="number" min="500" max="6000" step="50" inputmode="numeric" data-goal value="${s.waterGoal}"></label>
+        <label class="field"><span>Seu peso (kg)</span><input class="input" type="number" min="30" max="250" inputmode="numeric" data-weight placeholder="Para sugerir"></label>
+      </div>
+      <p class="small muted" data-hint style="margin:-4px 0 10px">Referência comum: 35 ml por kg de peso. Siga a orientação do seu médico.</p>
+      <label class="field"><span>Copo do lembrete (botão “Bebi água” do aviso)</span>
+        <select class="input" data-cup>${[150, 190, 200, 250, 300, 350, 400, 500].map((ml) => `<option value="${ml}" ${s.waterCup === ml ? 'selected' : ''}>${fmtWater(ml)}</option>`).join('')}</select>
+      </label>
+      <label class="switch"><span><b>Botão Água na tela Ponto</b></span><input type="checkbox" data-card ${s.waterCard ? 'checked' : ''}></label>
+      ${rem ? `<button class="list-btn" data-rem>${icon('bell')}<span class="grow"><b>${esc(rem.title)}</b>${rem.active ? '' : ' (pausado)'}<br><span class="small muted">${esc(describe(rem))}</span></span>${icon('right', 'muted')}</button>`
+    : `<button class="btn block" data-new-rem style="margin-top:10px">${icon('bell')} Criar lembrete de beber água</button>`}
+      <div class="points-help small muted">${icon('star')} <b>Pontos:</b> ${POINTS_GOAL} por dia com a meta batida, mais 1 por dia seguido de sequência (até +${STREAK_BONUS_MAX}). Níveis: ${LEVELS.map((l) => esc(l.name)).join(' → ')}. Com a meta batida, os lembretes do dia param.</div>
+    </details>
 
-    <h4 class="sheet-sub">Lembrete</h4>
-    ${rem ? `<button class="list-btn" data-rem>${icon('bell')}<span class="grow"><b>${esc(rem.title)}</b>${rem.active ? '' : ' (pausado)'}<br><span class="small muted">${esc(describe(rem))}</span></span>${icon('right', 'muted')}</button>`
-    : `<button class="btn block" data-new-rem>${icon('bell')} Criar lembrete de beber água</button>`}
-    <p class="small muted">Quando você bate a meta, os lembretes do dia param sozinhos.</p>
-
-    <div class="points-help small muted">${icon('star')} <b>Pontos:</b> ${POINTS_GOAL} por dia com a meta batida, mais 1 por dia seguido de sequência (até +${STREAK_BONUS_MAX}). Níveis: ${LEVELS.map((l) => esc(l.name)).join(' → ')}.</div>
-    <div class="btn-row"><button class="btn" data-close>Fechar</button></div>`, (sh) => {
+    <button class="btn block wsheet-done" data-close>Pronto</button>`, (sh) => {
     $$('[data-ml]', sh).forEach((b) => b.addEventListener('click', () => drink(b.dataset.ml)));
-    $('[data-add-custom]', sh).addEventListener('click', () => {
-      const v = Number($('[data-custom]', sh).value);
+    const custom = $('[data-custom]', sh);
+    const addBtn = $('[data-add-custom]', sh);
+    custom.addEventListener('input', () => { addBtn.disabled = !(Number(custom.value) >= 10); addBtn.classList.toggle('primary', !addBtn.disabled); });
+    addBtn.addEventListener('click', () => {
+      const v = Number(custom.value);
       if (!(v >= 10 && v <= 3000)) return toast('Digite entre 10 e 3000 ml');
       drink(v);
     });
@@ -611,13 +580,14 @@ function openWater() {
       openWater();
       render();
     }));
+    const reopen = () => { openWater(); const d = $('.sheet .wsheet-more'); if (d) d.open = true; };
     const setGoal = async (v) => {
       v = Math.round(v / 50) * 50;
       if (!(v >= 500 && v <= 6000)) return toast('Meta entre 500 e 6000 ml');
       await saveSettings({ waterGoal: v });
       await setWaterGoal(k, v);
       render();
-      openWater();
+      reopen();
       toast(`Meta: ${fmtWater(v)} por dia`);
     };
     $('[data-goal]', sh).addEventListener('change', (e) => setGoal(Number(e.target.value)));
@@ -631,7 +601,7 @@ function openWater() {
     $('[data-cup]', sh).addEventListener('change', async (e) => { await saveSettings({ waterCup: Number(e.target.value) }); render(); });
     $('[data-card]', sh).addEventListener('change', async (e) => { await saveSettings({ waterCard: e.target.checked }); render(); });
     $('[data-rem]', sh)?.addEventListener('click', () => openReminderEditor(rem));
-    $('[data-new-rem]', sh)?.addEventListener('click', async () => { await createWaterReminder(); openWater(); render(); });
+    $('[data-new-rem]', sh)?.addEventListener('click', async () => { await createWaterReminder(); reopen(); render(); });
   });
   sheet.parentElement.dataset.water = '1';
 }

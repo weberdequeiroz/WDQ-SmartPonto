@@ -3,7 +3,18 @@
 import { addDays } from './calc.js';
 
 export const DEFAULT_GOAL = 2000;
-export const AMOUNTS = [100, 150, 200, 250, 300, 350, 500, 750, 1000];
+export const CONTAINERS = [
+  { name: 'Copo', ml: 190, icon: 'cup' },
+  { name: 'Copo', ml: 250, icon: 'cup' },
+  { name: 'Copo grande', ml: 350, icon: 'cup' },
+  { name: 'Xícara', ml: 150, icon: 'cup' },
+  { name: 'Caneca', ml: 300, icon: 'cup' },
+  { name: 'Taça', ml: 200, icon: 'cup' },
+  { name: 'Garrafinha', ml: 500, icon: 'drop' },
+  { name: 'Squeeze', ml: 750, icon: 'drop' },
+  { name: 'Garrafa 1 L', ml: 1000, icon: 'drop' },
+  { name: 'Garrafa 1,5 L', ml: 1500, icon: 'drop' },
+];
 
 /** Pontos: 10 por dia com a meta batida + 1 por dia seguido de sequência (até +10). */
 export const POINTS_GOAL = 10;
