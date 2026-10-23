@@ -578,6 +578,7 @@ export const DEFAULT_SETTINGS = {
   theme: 'system',
   backupReminderDays: 7,
   // Água: meta diária (ml), tamanho do copo e se o cartão aparece na tela Ponto.
+  waterOn: false, // desligado até o usuário ativar em Ajustes → Água
   waterGoal: 2000,
   waterCup: 250,
   waterCard: true,

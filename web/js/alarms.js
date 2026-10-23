@@ -79,6 +79,7 @@ export function upcomingAlarms(from = Date.now(), to = from + HORIZON) {
   const list = [];
   for (const rem of state.reminders) {
     const water = rem.kind === 'water';
+    if (water && !state.settings.waterOn) continue; // Água desligada em Ajustes
     for (const o of occurrences(rem, from, to, ctx)) {
       const when = hhmm(o.eventAt);
       const day = dayKey(o.at);

@@ -1,6 +1,12 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.9.2', date: '2026-10-24', title: 'Água opcional',
+    items: [
+      { icon: 'drop', title: 'Ligue a Água só se quiser', text: 'O controle de água vem desligado. Para usar, vá em Ajustes → Água e ative “Controle de água”. Desligando, somem o atalho e os avisos de água.' },
+    ],
+  },
+  {
     version: '1.9.1', date: '2026-10-24', title: 'Água mais discreta',
     items: [
       { icon: 'drop', title: 'Atalho compacto na tela Ponto', text: 'Uma linha com o progresso do dia e o botão + para somar um copo. Toque na linha para abrir o controle completo de água.' },

@@ -31,7 +31,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.9.1';
+export const VERSION = '1.9.2';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -416,7 +416,7 @@ const waterGoalNow = () => goalOf(state.water[today()], state.settings.waterGoal
 
 /** Atalho compacto na tela Ponto: progresso do dia e um toque para somar um copo. A tela completa abre no painel. */
 function waterCardHTML() {
-  if (!state.settings.waterCard) return '';
+  if (!state.settings.waterOn || !state.settings.waterCard) return '';
   const k = today();
   const goal = waterGoalNow();
   const total = totalOf(state.water[k]);
@@ -502,6 +502,13 @@ async function drink(ml) {
 ACTIONS.drink = (ml) => drink(ml);
 
 /** Lembrete de água com a meta de hoje batida: o próximo aviso é só amanhã. */
+ACTIONS.waterOn = async (_, el) => {
+  await saveSettings({ waterOn: el.checked });
+  syncAlarms();
+  render();
+  toast(el.checked ? 'Controle de água ativado' : 'Controle de água desligado');
+};
+
 const remFrom = (r, now) => (r.kind === 'water' && metGoal(state.water[today()], state.settings.waterGoal)
   ? Math.max(now, parseDay(addDays(today(), 1)).getTime()) : now);
 
@@ -1733,7 +1740,8 @@ function renderSettings() {
 
     <section class="card">
       <h2>Água</h2>
-      <button class="list-btn" data-act="openWater">${icon('drop')}<span class="grow"><b>Controle de água</b><br><span class="small muted">Meta de ${fmtWater(s.waterGoal)} por dia · copo de ${fmtWater(s.waterCup)}${s.waterCard ? '' : ' · oculto na tela Ponto'}</span></span>${icon('right', 'muted')}</button>
+      <label class="switch" style="${s.waterOn ? '' : 'border-bottom:0'}"><span><b>Controle de água</b><br><span class="small muted">Meta diária, pontos e lembrete de beber água</span></span><input type="checkbox" data-act="waterOn" ${s.waterOn ? 'checked' : ''}></label>
+      ${s.waterOn ? `<button class="list-btn" data-act="openWater">${icon('drop')}<span class="grow"><b>Abrir a Água</b><br><span class="small muted">Meta de ${fmtWater(s.waterGoal)} por dia · copo de ${fmtWater(s.waterCup)}${s.waterCard ? '' : ' · oculto na tela Ponto'}</span></span>${icon('right', 'muted')}</button>` : ''}
     </section>
 
     <section class="card">
@@ -1884,10 +1892,11 @@ function permissionBanner() {
 function renderReminders() {
   const now = Date.now();
   const ctx = reminderCtx();
-  const items = state.reminders.map((r) => ({ r, next: r.active ? nextOccurrence(r, remFrom(r, now), ctx) : null }));
+  const off = (r) => r.kind === 'water' && !state.settings.waterOn;
+  const items = state.reminders.map((r) => ({ r, next: r.active && !off(r) ? nextOccurrence(r, remFrom(r, now), ctx) : null }));
   const active = items.filter((x) => x.r.active && x.next).sort((a, b) => a.next.at - b.next.at);
-  const ended = items.filter((x) => x.r.active && !x.next);
-  const paused = items.filter((x) => !x.r.active);
+  const ended = items.filter((x) => x.r.active && !off(x.r) && !x.next);
+  const paused = items.filter((x) => !x.r.active || off(x.r));
   const auto = upcomingAlarms(now, now + 24 * HOUR).filter((a) => a.id.startsWith('auto:'));
 
   const card = ({ r, next }) => `
@@ -1897,7 +1906,7 @@ function renderReminders() {
         <span class="grow">
           <b>${esc(r.title || 'Lembrete')}</b>
           <span class="small muted rem-desc">${icon('repeat')} ${esc(describe(r))}</span>
-          ${next ? `<span class="small rem-next">${whenLabel(next.at)}</span>` : r.active ? '<span class="small muted">Sem próximas datas</span>' : '<span class="small muted">Pausado</span>'}
+          ${off(r) ? '<span class="small muted">Água desligada em Ajustes</span>' : next ? `<span class="small rem-next">${whenLabel(next.at)}</span>` : r.active ? '<span class="small muted">Sem próximas datas</span>' : '<span class="small muted">Pausado</span>'}
         </span>
       </button>
       <label class="switch-mini" aria-label="Ativar ${esc(r.title)}"><input type="checkbox" data-act="toggleReminder" data-arg="${r.id}" ${r.active ? 'checked' : ''}></label>
@@ -1906,7 +1915,7 @@ function renderReminders() {
   return `
     <button class="btn primary block big-btn" data-act="newReminder">${icon('plus')} Criar lembrete</button>
     ${permissionBanner()}
-    ${state.reminders.some((r) => r.kind === 'water') ? '' : `<div class="card water-promo">
+    ${!state.settings.waterOn || state.reminders.some((r) => r.kind === 'water') ? '' : `<div class="card water-promo">
       <span class="water-promo-ico">${icon('drop')}</span>
       <span class="grow"><b>Lembrete de beber água</b><br><span class="small muted">Avisa de hora em hora no expediente e para sozinho quando você bate a meta do dia.</span></span>
       <button class="btn primary" data-act="waterReminder">Ativar</button>
@@ -1938,7 +1947,9 @@ const QUICK_REMINDERS = [
 
 ACTIONS.newReminder = () => openReminderEditor();
 ACTIONS.quickReminder = (i) => {
-  const q = QUICK_REMINDERS[Number(i)];
+  const { kind, ...rest } = QUICK_REMINDERS[Number(i)];
+  // Com a Água desligada, "Beber água" vira um lembrete comum (não depende da meta).
+  const q = kind === 'water' && !state.settings.waterOn ? rest : { ...rest, kind };
   const base = newReminder();
   openReminderEditor({ ...base, ...q, rule: { ...base.rule, ...q.rule } }, true);
 };
