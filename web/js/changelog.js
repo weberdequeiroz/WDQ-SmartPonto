@@ -1,6 +1,13 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.9.4', date: '2026-10-24', title: 'Meta de água fácil de achar',
+    items: [
+      { icon: 'drop', title: 'Água ao lado da Entrada', text: 'O botão Água fica à direita do botão de marcar o ponto.' },
+      { icon: 'star', title: 'Onde mudar a meta', text: 'Em Ajustes → Água → Meta diária, ou tocando em “Meta 2 L ✎” na tela de água.' },
+    ],
+  },
+  {
     version: '1.9.3', date: '2026-10-24', title: 'Água em um toque',
     items: [
       { icon: 'drop', title: 'Botão Água', text: 'Na tela Ponto, o botão Água abre a lista de recipientes: copo, xícara, caneca, garrafinha, squeeze, garrafa… Toque no que você bebeu e pronto.' },

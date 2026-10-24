@@ -683,9 +683,10 @@ details.more[open] summary { margin-bottom: 10px; }
 .alarm-sec { background: rgba(255, 255, 255, .12) !important; color: #fff !important; }
 
 
-/* Botões de atalho na tela Ponto (Água) */
-.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
-.tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 92px; padding: 12px 6px;
+/* Botão Água ao lado do botão principal */
+.main-row { grid-column: 1 / -1; display: flex; gap: 10px; }
+.main-row .action.main { flex: 1; min-width: 0; }
+.tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; flex: none; width: 92px; padding: 8px 6px;
   border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit; box-shadow: var(--shadow); }
 .tile b { font-size: 15px; font-weight: 600; }
 .tile small { font-size: 12px; color: var(--muted); margin-top: -4px; }
@@ -723,3 +724,7 @@ details.more[open] summary { margin-bottom: 10px; }
 .wsheet-more summary svg.i { width: 18px; height: 18px; color: var(--water); }
 .wsheet-more[open] summary { border-bottom: 1px solid var(--border); margin-bottom: 4px; }
 .wsheet-done { margin-top: 14px; min-height: 54px; border: 0 !important; color: #06281f !important; font-weight: 800; background: #5eead4 !important; border-radius: 99px; }
+
+.goal-edit { padding: 0; color: var(--text); font-size: inherit; text-align: left; }
+.goal-edit svg.i { width: 13px; height: 13px; color: var(--water); }
+.wsheet-goal.met .goal-edit { color: #16a34a; font-weight: 700; }

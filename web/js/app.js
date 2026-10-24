@@ -31,7 +31,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.9.3';
+export const VERSION = '1.9.4';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -415,18 +415,16 @@ function bindPunchPick(root, holder, onDone) {
 const WEEK_LETTER = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S'];
 const waterGoalNow = () => goalOf(state.water[today()], state.settings.waterGoal);
 
-/** Botão de atalho na tela Ponto (abre o painel de água). */
+/** Botão Água ao lado do botão principal do ponto (abre o painel de água). */
 function waterCardHTML() {
   if (!state.settings.waterOn || !state.settings.waterCard) return '';
   const total = totalOf(state.water[today()]);
   const met = total >= waterGoalNow();
-  return `<section class="tiles">
-    <button class="tile ${met ? 'met' : ''}" data-act="openWater">
+  return `<button class="tile ${met ? 'met' : ''}" data-act="openWater">
       <span class="tile-ico water-fill">${icon('drop')}</span>
       <b>Água</b>
       ${total ? `<small>${fmtWater(total)}</small>` : ''}
-    </button>
-  </section>`;
+    </button>`;
 }
 
 async function drink(ml) {
@@ -456,6 +454,14 @@ async function drink(ml) {
 ACTIONS.drink = (ml) => drink(ml);
 
 /** Lembrete de água com a meta de hoje batida: o próximo aviso é só amanhã. */
+ACTIONS.waterGoal = async (_, el) => {
+  const v = Number(el.value);
+  await saveSettings({ waterGoal: v });
+  await setWaterGoal(today(), v);
+  render();
+  toast(`Meta: ${fmtWater(v)} por dia`);
+};
+
 ACTIONS.waterOn = async (_, el) => {
   await saveSettings({ waterOn: el.checked });
   syncAlarms();
@@ -527,7 +533,7 @@ function openWater() {
     <div class="wsheet-goal ${met ? 'met' : ''}">
       <div class="progress"><div style="width:${pct}%"></div></div>
       <div class="row between small">
-        <span>${met ? `${icon('check')} Meta batida! +${st.earned[k]} pts` : `Meta ${fmtWater(goal)} · faltam ${fmtWater(goal - total)} · vale +${nextReward(state.water, k, s.waterGoal)} pts`}</span>
+        <button class="link goal-edit" data-goal-edit>${met ? `${icon('check')} Meta batida! +${st.earned[k]} pts` : `Meta <b>${fmtWater(goal)}</b> ${icon('edit')} · faltam ${fmtWater(goal - total)}`}</button>
         <span class="wsheet-chips"><span class="${st.streak ? 'hot' : ''}">${icon('flame')}${st.streak}</span><span>${icon('star')}${st.points}</span></span>
       </div>
     </div>
@@ -544,7 +550,7 @@ function openWater() {
     <ul class="water-log">${log.map((e) => `<li><span class="time">${hhmm(e.ts)}</span><span class="grow">${icon('drop')} ${fmtWater(e.ml)}</span><button class="link" data-del-ts="${e.ts}" aria-label="Apagar">${icon('trash')}</button></li>`).join('')}</ul>` : ''}
 
     <details class="wsheet-more">
-      <summary>${icon('trophy')} Meta, pontos e lembrete <span class="small muted">· nível ${esc(lv.name)}</span></summary>
+      <summary>${icon('trophy')} Meta diária, pontos e lembrete <span class="small muted">· ${fmtWater(s.waterGoal)}</span></summary>
       <div class="level-box">
         <div class="row between"><b>${icon('trophy')} Nível ${esc(lv.name)}</b><span class="small"><b>${st.points}</b> pts</span></div>
         <div class="progress"><div style="width:${lv.pct}%"></div></div>
@@ -580,6 +586,13 @@ function openWater() {
       openWater();
       render();
     }));
+    $('[data-goal-edit]', sh).addEventListener('click', () => {
+      const d = $('.wsheet-more', sh);
+      d.open = true;
+      const g = $('[data-goal]', sh);
+      g.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setTimeout(() => g.focus(), 300);
+    });
     const reopen = () => { openWater(); const d = $('.sheet .wsheet-more'); if (d) d.open = true; };
     const setGoal = async (v) => {
       v = Math.round(v / 50) * 50;
@@ -670,16 +683,17 @@ function renderHome() {
     </section>
 
     <section class="actions">
-      <button class="action main a-${main}" data-act="punch" data-arg="${main}">
-        ${icon(main)}<div><strong>${mainLabel}</strong><br><span>${ACTION_HINT[main]}</span></div>
-      </button>
+      <div class="main-row">
+        <button class="action main a-${main}" data-act="punch" data-arg="${main}">
+          ${icon(main)}<div><strong>${mainLabel}</strong><br><span>${ACTION_HINT[main]}</span></div>
+        </button>
+        ${waterCardHTML()}
+      </div>
       ${others.map((t) => `
         <button class="action a-${t} ${others.length === 1 ? 'wide' : ''}" data-act="punch" data-arg="${t}">
           ${icon(t)}<strong>${label(t)}</strong><span>${ACTION_HINT[t]}</span>
         </button>`).join('')}
     </section>
-
-    ${waterCardHTML()}
 
     <section class="card">
       <h2>Hoje</h2>
@@ -1711,7 +1725,10 @@ function renderSettings() {
     <section class="card">
       <h2>Água</h2>
       <label class="switch" style="${s.waterOn ? '' : 'border-bottom:0'}"><span><b>Controle de água</b><br><span class="small muted">Meta diária, pontos e lembrete de beber água</span></span><input type="checkbox" data-act="waterOn" ${s.waterOn ? 'checked' : ''}></label>
-      ${s.waterOn ? `<button class="list-btn" data-act="openWater">${icon('drop')}<span class="grow"><b>Abrir a Água</b><br><span class="small muted">Meta de ${fmtWater(s.waterGoal)} por dia · copo de ${fmtWater(s.waterCup)}${s.waterCard ? '' : ' · oculto na tela Ponto'}</span></span>${icon('right', 'muted')}</button>` : ''}
+      ${s.waterOn ? `<label class="field" style="margin-top:10px"><span>Meta diária de água</span>
+        <select class="input" data-act="waterGoal">${[1000, 1500, 1750, 2000, 2250, 2500, 2750, 3000, 3500, 4000].concat([s.waterGoal]).filter((v, i, a) => a.indexOf(v) === i).sort((a, b) => a - b).map((ml) => `<option value="${ml}" ${s.waterGoal === ml ? 'selected' : ''}>${fmtWater(ml)} por dia</option>`).join('')}</select>
+      </label>
+      <button class="list-btn" data-act="openWater">${icon('drop')}<span class="grow"><b>Abrir a Água</b><br><span class="small muted">Meta de ${fmtWater(s.waterGoal)} por dia · copo de ${fmtWater(s.waterCup)}${s.waterCard ? '' : ' · oculto na tela Ponto'}</span></span>${icon('right', 'muted')}</button>` : ''}
     </section>
 
     <section class="card">
