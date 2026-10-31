@@ -31,7 +31,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.9.4';
+export const VERSION = '1.9.5';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -79,6 +79,7 @@ const ICONS = {
   home: '<path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
   sparkle: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
   cup: '<path d="M5 3h14l-1.6 17.2a2 2 0 0 1-2 1.8H8.6a2 2 0 0 1-2-1.8z"/><path d="M12 10.5s-2.2 2.4-2.2 3.9a2.2 2.2 0 0 0 4.4 0c0-1.5-2.2-3.9-2.2-3.9z"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
   drop: '<path d="M12 2.7s-6.5 7.1-6.5 11.8a6.5 6.5 0 0 0 13 0C18.5 9.8 12 2.7 12 2.7z"/>',
   flame: '<path d="M12 22c4 0 7-2.8 7-6.8 0-3.6-2.6-6-4.2-8.2-.4 2-1.5 3.3-2.8 3.8.3-3.2-1.2-6.4-4-8.8.2 3.3-3 6.2-3 10.6C5 19 8 22 12 22z"/>',
   star: '<path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z"/>',
@@ -1649,6 +1650,16 @@ function renderSettings() {
   const lastBackup = state.meta.lastBackup ? `${fmtDay(dayKey(state.meta.lastBackup))} às ${hhmm(state.meta.lastBackup)}` : 'nunca';
   return `
     ${accountCardHTML()}
+    <section class="card invite">
+      <div class="invite-row">
+        <span class="invite-ico">${icon('gift')}</span>
+        <div class="grow"><b>Indicar para um amigo</b><br><span class="small muted">Gostou do app? Envie para colegas de trabalho e amigos. É grátis.</span></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" data-act="invite">${icon('share')} Indicar</button>
+        <button class="btn" data-act="inviteCopy">Copiar convite</button>
+      </div>
+    </section>
     <section class="card">
       <h2>Perfil</h2>
       <label class="field"><span>Nome</span><input class="input" data-set="name" value="${esc(s.name)}" autocomplete="name" placeholder="Seu nome"></label>
@@ -2236,6 +2247,24 @@ const LS_SEEN = 'sp-seen-version';
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
 const SITE = 'https://weberdequeiroz.github.io/WDQ-SmartPonto/';
+
+// ---------- Indicar para um amigo ----------
+function inviteText() {
+  const first = state.settings.name.trim().split(/\s+/)[0];
+  return `${first ? `${first} indicou para você o` : 'Conheça o'} *WDQ SmartPonto*: ponto eletrônico pessoal grátis, com banco de horas, relatórios e lembretes.
+
+📱 Android: ${SITE}SmartPonto.apk
+🍎 iPhone: abra ${SITE} no Safari, toque em Compartilhar e depois em “Adicionar à Tela de Início”.`;
+}
+ACTIONS.invite = () => shareText(inviteText());
+ACTIONS.inviteCopy = async () => {
+  try {
+    await navigator.clipboard.writeText(inviteText());
+    toast('Convite copiado. Cole no WhatsApp, e-mail…');
+  } catch {
+    shareText(inviteText());
+  }
+};
 
 /** Tela "Novidades": versões ainda não vistas (ou todas, pelo menu Sobre). */
 function openWhatsNew({ all = false, since = null } = {}) {

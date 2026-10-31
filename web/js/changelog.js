@@ -1,6 +1,12 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.9.5', date: '2026-10-31', title: 'Indique para um amigo',
+    items: [
+      { icon: 'user', title: 'Convide colegas e amigos', text: 'Em Ajustes → Indicar para um amigo, envie o convite pelo WhatsApp, e-mail ou outro app. Ele já leva os links do Android e do iPhone.' },
+    ],
+  },
+  {
     version: '1.9.4', date: '2026-10-24', title: 'Meta de água fácil de achar',
     items: [
       { icon: 'drop', title: 'Água ao lado da Entrada', text: 'O botão Água fica à direita do botão de marcar o ponto.' },
