@@ -1,6 +1,12 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.9.6', date: '2026-11-04', title: 'Servidor com endereço próprio',
+    items: [
+      { icon: 'shield', title: 'Melhoria interna', text: 'O servidor da sua conta ganhou um endereço só dele. Nada muda no seu uso: seus dados, sua conta e seus avisos continuam iguais.' },
+    ],
+  },
+  {
     version: '1.9.5', date: '2026-10-31', title: 'Indique para um amigo',
     items: [
       { icon: 'user', title: 'Convide colegas e amigos', text: 'Em Ajustes → Indicar para um amigo, envie o convite pelo WhatsApp, e-mail ou outro app. Ele já leva os links do Android e do iPhone.' },
