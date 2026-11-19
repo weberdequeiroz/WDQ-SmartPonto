@@ -1,6 +1,13 @@
 // Novidades de cada versão, mostradas ao usuário depois de atualizar. A primeira é a mais recente.
 export const CHANGELOG = [
   {
+    version: '1.10.0', date: '2026-11-19', title: 'Atalhos e água pela notificação',
+    items: [
+      { icon: 'wand', title: 'Atalhos na tela Ponto', text: 'Lembrete, Corrigir dia, Resumo do mês e Backup a um toque. Dá para esconder em Ajustes → Registro.' },
+      { icon: 'drop', title: 'Bebi água pela notificação', text: 'No Android, o aviso de água ganhou o botão “Bebi água”: registra o copo sem abrir o app (requer instalar o APK novo uma vez).' },
+    ],
+  },
+  {
     version: '1.9.6', date: '2026-11-04', title: 'Servidor com endereço próprio',
     items: [
       { icon: 'shield', title: 'Melhoria interna', text: 'O servidor da sua conta ganhou um endereço só dele. Nada muda no seu uso: seus dados, sua conta e seus avisos continuam iguais.' },

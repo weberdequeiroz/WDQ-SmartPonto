@@ -183,9 +183,9 @@ export async function deleteReminder(id) {
 // Água: cada dia é um registro; na conta vai como 'dayinfo' com id 'water:AAAA-MM-DD'.
 export const WATER_PREFIX = 'water:';
 
-export async function addWater(key, ml, goal) {
+export async function addWater(key, ml, goal, ts = Date.now()) {
   const day = state.water[key] || { log: [] };
-  state.water[key] = { ...day, goal, log: [...day.log, { ts: Date.now(), ml }], updatedAt: Date.now() };
+  state.water[key] = { ...day, goal: day.goal || goal, log: [...day.log, { ts, ml }].sort((a, b) => a.ts - b.ts), updatedAt: Date.now() };
   await putKV('water', state.water);
   changed();
 }

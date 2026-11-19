@@ -14,15 +14,18 @@ import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Um aviso já calculado pelo app web: horário exato, texto e estilo ("alarm" ou "notify"). */
-data class Alarm(val id: String, val at: Long, val title: String, val body: String, val style: String) {
-    fun toJson(): JSONObject = JSONObject().put("id", id).put("at", at).put("title", title).put("body", body).put("style", style)
+/**
+ * Um aviso já calculado pelo app web: horário exato, texto e estilo ("alarm" ou "notify").
+ * drink > 0: lembrete de água; a notificação ganha o botão "Bebi água" com essa quantidade (ml).
+ */
+data class Alarm(val id: String, val at: Long, val title: String, val body: String, val style: String, val drink: Int = 0) {
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("at", at).put("title", title).put("body", body).put("style", style).put("drink", drink)
     val notificationId: Int get() = id.hashCode()
 
     companion object {
         fun fromJson(o: JSONObject) = Alarm(
             o.optString("id"), o.optLong("at"), o.optString("title", "Lembrete"),
-            o.optString("body"), o.optString("style", "notify"),
+            o.optString("body"), o.optString("style", "notify"), o.optInt("drink", 0),
         )
     }
 }
@@ -181,7 +184,10 @@ object Notifier {
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setShowWhen(true)
             .setWhen(alarm.at)
-            .addAction(Notification.Action.Builder(null as android.graphics.drawable.Icon?, "Concluir", action(ctx, alarm, ActionReceiver.DONE, 0)).build())
+        if (alarm.drink > 0) {
+            builder.addAction(Notification.Action.Builder(null as android.graphics.drawable.Icon?, "Bebi água · ${alarm.drink} ml", action(ctx, alarm, ActionReceiver.DRINK, 2)).build())
+        }
+        builder.addAction(Notification.Action.Builder(null as android.graphics.drawable.Icon?, if (alarm.drink > 0) "Agora não" else "Concluir", action(ctx, alarm, ActionReceiver.DONE, 0)).build())
             .addAction(Notification.Action.Builder(null as android.graphics.drawable.Icon?, "Adiar 10 min", action(ctx, alarm, ActionReceiver.SNOOZE, 1)).build())
         if (isAlarm) {
             val full = PendingIntent.getActivity(
@@ -226,11 +232,36 @@ class ActionReceiver : BroadcastReceiver() {
         val alarm = Alarm.fromJson(JSONObject(json))
         Notifier.cancel(context, alarm)
         if (intent.action == SNOOZE) AlarmScheduler.snooze(context, alarm, 10)
+        if (intent.action == DRINK && alarm.drink > 0) WaterInbox.add(context, alarm.drink)
     }
 
     companion object {
         const val DONE = "com.wdq.smartponto.DONE"
         const val SNOOZE = "com.wdq.smartponto.SNOOZE"
+        const val DRINK = "com.wdq.smartponto.DRINK"
+    }
+}
+
+/** Copos registrados pela notificação com o app fechado; o app web busca e lança ao abrir. */
+object WaterInbox {
+    private const val PREFS = "water_inbox"
+    private const val KEY = "list"
+
+    @Synchronized
+    fun add(ctx: Context, ml: Int) {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val arr = try { JSONArray(prefs.getString(KEY, "[]")) } catch (_: Exception) { JSONArray() }
+        arr.put(JSONObject().put("ts", System.currentTimeMillis()).put("ml", ml))
+        prefs.edit().putString(KEY, arr.toString()).commit()
+    }
+
+    /** Devolve os copos pendentes e esvazia a lista. */
+    @Synchronized
+    fun take(ctx: Context): String {
+        val prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val list = prefs.getString(KEY, "[]") ?: "[]"
+        prefs.edit().remove(KEY).commit()
+        return list
     }
 }
 

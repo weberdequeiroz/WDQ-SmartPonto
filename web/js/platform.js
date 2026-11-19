@@ -83,7 +83,13 @@ export function setThemeColor(color) {
 
 // ---------- Alarmes nativos (APK) ----------
 export function nativeSetAlarms(list) {
-  bridge?.setAlarms?.(JSON.stringify(list.map(({ id, at, title, body, style }) => ({ id, at, title, body, style }))));
+  bridge?.setAlarms?.(JSON.stringify(list.map(({ id, at, title, body, style, drink }) => ({ id, at, title, body, style, drink: drink || 0 }))));
+}
+
+/** Copos registrados pelo botão "Bebi água" da notificação: [{ ts, ml }]. Vazio fora do APK. */
+export function nativeTakeDrinks() {
+  if (!bridge?.takeDrinks) return [];
+  try { return JSON.parse(bridge.takeDrinks()) || []; } catch { return []; }
 }
 
 /** { notifications, exact, fullScreen, battery } — true quando está tudo liberado. null fora do APK. */

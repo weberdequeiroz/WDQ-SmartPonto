@@ -94,7 +94,7 @@ export function upcomingAlarms(from = Date.now(), to = from + HORIZON) {
           ? (rem.notes || `Hora de um copo d'água. Meta do dia: ${fmtWater(goalOf(state.water[day], state.settings.waterGoal))}.`)
           : rem.notes ? `${when} · ${rem.notes}` : `${when} · ${describe(rem)}`,
         style: rem.style || 'alarm',
-        ...(water ? { water: true } : {}),
+        ...(water ? { water: true, drink: state.settings.waterCup } : {}),
       });
     }
   }

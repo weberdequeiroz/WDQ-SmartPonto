@@ -200,6 +200,10 @@ class MainActivity : ComponentActivity() {
         }
 
         /** Lista de avisos calculada pelo app web (JSON). */
+        /** Copos de água registrados pela notificação ("Bebi água") enquanto o app estava fechado. */
+        @JavascriptInterface
+        fun takeDrinks(): String = WaterInbox.take(this@MainActivity)
+
         @JavascriptInterface
         fun setAlarms(json: String) {
             AlarmScheduler.setAll(this@MainActivity, json)

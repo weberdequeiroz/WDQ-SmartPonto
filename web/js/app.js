@@ -15,7 +15,7 @@ import {
 import {
   isAndroidApp, isIOS, isStandalone, shareFile, saveFile, printPage, shareText, vibrate, getLocation, setThemeColor,
   nativeAlarmStatus, nativeRequestNotifications, nativeOpenSettings, nativeTestAlarm, openCalendarFile, openCalendarURL,
-  nativeAutoUpdate, nativeReload, nativeCheckUpdate,
+  nativeAutoUpdate, nativeReload, nativeCheckUpdate, nativeTakeDrinks,
 } from './platform.js';
 import {
   RULE_TYPES, describe, nextOccurrence, occurrences, toICS, newReminder, holidayName, punchAlertsICS,
@@ -31,7 +31,7 @@ import {
   syncAlarms, upcomingAlarms, reminderCtx, startWebAlarms, snoozeWeb, webNotify, startChime, stopChime,
 } from './alarms.js';
 
-export const VERSION = '1.9.6';
+export const VERSION = '1.10.0';
 
 // ---------- Utilidades ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -454,6 +454,27 @@ async function drink(ml) {
 }
 ACTIONS.drink = (ml) => drink(ml);
 
+/** Lança os copos marcados no botão "Bebi água" da notificação do Android. */
+async function importNativeDrinks() {
+  const list = nativeTakeDrinks().filter((d) => d && d.ml > 0 && d.ts > 0);
+  if (!list.length) return;
+  const k = today();
+  const before = waterStats(state.water, k, state.settings.waterGoal);
+  const wasMet = metGoal(state.water[k], state.settings.waterGoal);
+  for (const d of list) {
+    const day = dayKey(d.ts);
+    await addWater(day, Math.round(d.ml), goalOf(state.water[day], state.settings.waterGoal), d.ts);
+  }
+  if (!sheetEl) render();
+  const after = waterStats(state.water, k, state.settings.waterGoal);
+  if (!wasMet && metGoal(state.water[k], state.settings.waterGoal)) {
+    celebrateWater(after.earned[k], after.streak, after.level.index > before.level.index ? after.level : null);
+  } else {
+    const ml = list.reduce((a, d) => a + d.ml, 0);
+    toast(`${fmtWater(ml)} registrado pela notificação · ${fmtWater(totalOf(state.water[k]))} hoje`);
+  }
+}
+
 /** Lembrete de água com a meta de hoje batida: o próximo aviso é só amanhã. */
 ACTIONS.waterGoal = async (_, el) => {
   const v = Number(el.value);
@@ -695,6 +716,7 @@ function renderHome() {
           ${icon(t)}<strong>${label(t)}</strong><span>${ACTION_HINT[t]}</span>
         </button>`).join('')}
     </section>
+    ${shortcutsHTML()}
 
     <section class="card">
       <h2>Hoje</h2>
@@ -1382,6 +1404,26 @@ ACTIONS.repCsv = async () => {
   await shareFile(`smartponto-relatorio-${fileStamp(range)}.csv`, 'text/csv', csv);
 };
 
+/** Atalhos da tela Ponto: as tarefas mais comuns a um toque. */
+function shortcutsHTML() {
+  if (state.settings.homeShortcuts === false) return '';
+  const fix = dayTemplate(today(), state.settings, state.dayInfo).length > 0;
+  const items = [
+    ['newReminder', '', 'bell', 'Lembrete'],
+    fix ? ['fillDay', today(), 'wand', 'Corrigir dia'] : ['addPunch', today(), 'edit', 'Ajustar dia'],
+    ['shareMonth', '', 'share', 'Resumo do mês'],
+    ['backup', '', 'shield', 'Backup'],
+  ];
+  return `<section class="shortcuts">${items.map(([act, arg, ic, lbl]) => `<button class="shortcut" data-act="${act}" data-arg="${arg}">${icon(ic)}<span>${lbl}</span></button>`).join('')}</section>`;
+}
+
+// Resumo do mês atual, a partir da tela Ponto (não depende do período escolhido em Relatórios).
+ACTIONS.shareMonth = () => {
+  const saved = ui.report;
+  ui.report = { ...saved, mode: 'month', anchor: today() };
+  try { ACTIONS.repShare(); } finally { ui.report = saved; }
+};
+
 ACTIONS.repShare = () => {
   const range = reportRange();
   const t = currentReport().totals;
@@ -1724,6 +1766,7 @@ function renderSettings() {
 
     <section class="card">
       <h2>Registro</h2>
+      <label class="switch"><span><b>Atalhos na tela Ponto</b><br><span class="small muted">Lembrete, Corrigir dia, Resumo do mês e Backup</span></span><input type="checkbox" data-set="homeShortcuts" ${s.homeShortcuts !== false ? 'checked' : ''}></label>
       <label class="switch"><span><b>Confirmar antes de marcar</b><br><span class="small muted">Evita toques acidentais</span></span><input type="checkbox" data-set="confirmPunch" ${s.confirmPunch ? 'checked' : ''}></label>
       <label class="switch"><span><b>Salvar localização</b><br><span class="small muted">Guarda onde cada ponto foi marcado</span></span><input type="checkbox" data-set="geolocation" ${s.geolocation ? 'checked' : ''}></label>
       <label class="field" style="margin:12px 0 0"><span>Tema</span>
@@ -2526,6 +2569,7 @@ window.spBack = () => {
 
 // O Android chama ao voltar para o app (ex.: depois de liberar permissões).
 window.spResume = () => {
+  importNativeDrinks();
   syncAlarms();
   if (!sheetEl && !alarmEl && ['reminders', 'home'].includes(ui.view)) render();
 };
@@ -2555,6 +2599,7 @@ async function init() {
   const fromHash = location.hash.slice(1);
   if (VIEWS[fromHash]) ui.view = fromHash;
   render();
+  importNativeDrinks();
   if (!state.settings.onboarded && !state.punches.length) onboarding();
   else if (!state.settings.onboarded) saveSettings({ onboarded: true });
 
